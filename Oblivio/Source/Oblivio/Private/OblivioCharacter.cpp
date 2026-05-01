@@ -1,34 +1,194 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿#include "OblivioCharacter.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/KismetMathLibrary.h"
 
-
-#include "OblivioCharacter.h"
-
-// Sets default values
 AOblivioCharacter::AOblivioCharacter()
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(RootComponent);
+	CameraBoom->SetRelativeRotation(FRotator(-65.f, 0.f, 0.f));
+	CameraBoom->TargetArmLength = 900.f;
+	CameraBoom->bInheritYaw = false;
 
+	TopDownCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TopDownCamera"));
+	TopDownCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+
+	FlashlightComponent = CreateDefaultSubobject<USpotLightComponent>(TEXT("Flashlight"));
+	FlashlightComponent->SetupAttachment(RootComponent);
+	FlashlightComponent->SetRelativeLocation(FVector(40.f, 0.f, 40.f));
+
+	FlashbangLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("FlashbangLight"));
+	FlashbangLight->SetupAttachment(RootComponent);
+	FlashbangLight->SetIntensity(0.0f); // 평소에는 꺼둠
+	FlashbangLight->SetCastShadows(false);
+	FlashbangLight->SetAttenuationRadius(800.0f);
+
+	GetCharacterMovement()->bOrientRotationToMovement = false;
+	bUseControllerRotationYaw = false;
 }
 
-// Called when the game starts or when spawned
 void AOblivioCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
+	UpdateFlashlightVisuals();
 }
 
-// Called every frame
 void AOblivioCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	UpdateStatus(DeltaTime);
+	//Debug 확인용
+	if (GEngine)
+	{
+		//생존 스탯 (Health, Hunger, Thirst)
+		FString StatusMsg = FString::Printf(TEXT("HP: %.1f | Hunger: %.1f | Thirst: %.1f"), Health, Hunger, Thirst);
+		GEngine->AddOnScreenDebugMessage(1, DeltaTime, FColor::Cyan, StatusMsg);
 
+		//배터리 상태 및 손전등 ON/OFF
+		FString BatteryMsg = FString::Printf(TEXT("Battery: %.1f%% (%s) | Focus: %.2f"),
+			Battery, bIsFlashlightOn ? TEXT("ON") : TEXT("OFF"), CurrentFocusAlpha);
+
+		// 배터리가 적으면 빨간색, 충분하면 초록색으로 표시
+		FColor BatteryColor = (Battery < 20.f) ? FColor::Red : FColor::Green;
+		GEngine->AddOnScreenDebugMessage(2, DeltaTime, BatteryColor, BatteryMsg);
+
+		//이동 상태
+		FString MoveMsg = FString::Printf(TEXT("Movement: %s | Speed: %.1f"),
+			bIsRunning ? TEXT("RUNNING") : TEXT("WALKING"), GetVelocity().Size());
+		GEngine->AddOnScreenDebugMessage(3, DeltaTime, FColor::Yellow, MoveMsg);
+	}
 }
 
-// Called to bind functionality to input
-void AOblivioCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+void AOblivioCharacter::Move(const FVector2D& Value)
 {
-	Super::SetupPlayerInputComponent(PlayerInputComponent);
-
+	if (Controller != nullptr)
+	{
+		AddMovementInput(FVector::ForwardVector, Value.Y);
+		AddMovementInput(FVector::RightVector, Value.X);
+	}
 }
 
+void AOblivioCharacter::AdjustFocus(float Value)
+{
+	if (!bCanAdjustFocus) return;
+	CurrentFocusAlpha = FMath::Clamp(CurrentFocusAlpha + (Value * 0.1f), 0.0f, 1.0f);
+	UpdateFlashlightVisuals();
+}
+
+void AOblivioCharacter::StartRunning() { bIsRunning = true; }
+void AOblivioCharacter::StopRunning() { bIsRunning = false; }
+
+void AOblivioCharacter::UseFlashbang()
+{
+	if (Battery >= 50.0f)
+	{
+		Battery -= 50.0f;
+
+		FlashbangIntensity = 50000.0f;
+		FlashbangLight->SetIntensity(FlashbangIntensity);
+		FlashbangLight->SetVisibility(true);
+
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::White, TEXT("!!! FLASHBANG !!!"));
+		}
+
+		GetWorldTimerManager().SetTimer(FlashbangTimerHandle, this, &AOblivioCharacter::FadeOutFlashbang, 0.01f, true);
+
+		// 일정 시간 동안 소리가 안 들리는 연출이나 몬스터 소멸 로직 호출
+	}
+}
+
+void AOblivioCharacter::FadeOutFlashbang()
+{
+	// 빛의 강도를 서서히 줄임
+	FlashbangIntensity -= 2000.0f;
+
+	if (FlashbangIntensity <= 0.0f)
+	{
+		FlashbangIntensity = 0.0f;
+		FlashbangLight->SetIntensity(0.0f);
+		FlashbangLight->SetVisibility(false);
+
+		// 타이머 종료
+		GetWorldTimerManager().ClearTimer(FlashbangTimerHandle);
+	}
+	else
+	{
+		FlashbangLight->SetIntensity(FlashbangIntensity);
+	}
+}
+
+void AOblivioCharacter::ToggleFlashlight()
+{
+	if (Battery > 0.0f)
+	{
+		bIsFlashlightOn = !bIsFlashlightOn;
+		UpdateFlashlightVisuals();
+	}
+}
+
+void AOblivioCharacter::ToggleInventory()
+{
+	bIsInventoryOpen = !bIsInventoryOpen;
+}
+
+void AOblivioCharacter::ToggleCrafting()
+{
+	bIsCraftingOpen = !bIsCraftingOpen;
+}
+
+void AOblivioCharacter::Interact()
+{
+	FHitResult HitResult;
+	FVector Start = GetActorLocation();
+	FVector End = Start + (GetActorForwardVector() * InteractionDistance);
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+
+	if (GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Interacted with: %s"), *HitResult.GetActor()->GetName());
+	}
+}
+
+void AOblivioCharacter::UpdateStatus(float DeltaTime)
+{
+	float DepleteRate = bIsRunning ? 2.0f : 1.0f;
+	Hunger = FMath::Max(0.0f, Hunger - (DeltaTime * 0.3f * DepleteRate));
+	Thirst = FMath::Max(0.0f, Thirst - (DeltaTime * 0.4f * DepleteRate));
+
+	if (bIsFlashlightOn && Battery > 0.0f)
+	{
+		float FocusPenalty = FMath::Lerp(1.0f, 1.5f, CurrentFocusAlpha);
+		Battery = FMath::Max(0.0f, Battery - (DeltaTime * BatteryDepletionRate * FocusPenalty));
+
+		if (Battery <= 0.0f)
+		{
+			bIsFlashlightOn = false;
+			UpdateFlashlightVisuals();
+		}
+	}
+
+	if (Hunger <= 0.0f || Thirst <= 0.0f) Health -= DeltaTime * 1.0f;
+	GetCharacterMovement()->MaxWalkSpeed = bIsRunning ? RunSpeed : WalkSpeed;
+}
+
+void AOblivioCharacter::UpdateFlashlightVisuals()
+{
+	if (!FlashlightComponent) return;
+	FlashlightComponent->SetVisibility(bIsFlashlightOn);
+	if (bIsFlashlightOn)
+	{
+		float TargetAngle = FMath::Lerp(60.0f, 15.0f, CurrentFocusAlpha);
+		float TargetRadius = FMath::Lerp(600.0f, 1800.0f, CurrentFocusAlpha);
+		FlashlightComponent->SetOuterConeAngle(TargetAngle);
+		FlashlightComponent->SetAttenuationRadius(TargetRadius);
+	}
+}
