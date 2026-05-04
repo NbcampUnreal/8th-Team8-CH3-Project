@@ -811,3 +811,13 @@ void AEnemyBase::RestoreMovementAfterLight()
 	RefreshWalkSpeedFromSources();
 	UpdateState();
 }
+
+void AEnemyBase::SetEnemySoundVolumeMultiplier(float NewMultiplier)
+{
+	EnemySoundVolumeMultiplier = FMath::Clamp(NewMultiplier, 0.0f, 4.0f);
+	ApplyEnemySoundVolumes();
+}
+
+void AEnemyBase::ApplyEnemySoundVolumes()
+{
+}

@@ -29,10 +29,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy|Stalker")
 	bool IsRevealedByFlashlight() const { return bRevealedByFlashlight; }
 
+	/** Shipping 제외: 머리 위에 체력 문자열(DrawDebugString). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stalker|Debug")
+	bool bDebugDrawStalkerHealth = true;
+
 protected:
 	virtual void NotifyEnemyStateChanged(EEnemyAIState OldState, EEnemyAIState NewState) override;
 	virtual float GetLocomotionBaseSpeed() const override;
 	virtual void Die() override;
+	virtual void ApplyEnemySoundVolumes() override;
 
 	/** 손전등에 비칠 때만 보이기/들리기. 끄면 항상 표시(다른 적과 동일). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stalker|Flashlight")
@@ -49,6 +54,14 @@ protected:
 	/** 손전등에 들어왔을 때 재생할 루프(발소리·신음 등). 비우면 오디오 컴포넌트만 음소거 토글. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stalker|Audio")
 	TObjectPtr<USoundBase> StalkerRevealLoopSound;
+
+	/** 손전등이 들어올 때 루프 볼륨 0→1까지 걸리는 시간(초). 짧을수록 빨리 선명해짐. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stalker|Audio", meta = (ClampMin = "0.01", ClampMax = "2.0"))
+	float StalkerAudioAttackSeconds = 0.08f;
+
+	/** 손전등을 뗄 때 1→0 페이드(초). 길수록 끊김 덜함. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stalker|Audio", meta = (ClampMin = "0.05", ClampMax = "3.0"))
+	float StalkerAudioReleaseSeconds = 0.38f;
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Stalker")
 	void OnFlashlightRevealChanged(bool bRevealed);
@@ -76,6 +89,8 @@ protected:
 private:
 	float ChaseBurstTimeRemaining = 0.0f;
 	bool bRevealedByFlashlight = false;
+	/** 손전등 루프 SFX용 0~1 스무딩(메시·IsRevealed는 즉시, 소리만 지연). */
+	float StealthAudioEnvelope = 0.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Stalker|Audio", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAudioComponent> StalkerAudioComponent;
@@ -84,4 +99,7 @@ private:
 	void ApplyFlashlightReveal(bool bRevealed);
 	bool ComputeInPlayerFlashlightCone() const;
 	bool ShouldTriggerChaseBurstFromBehind() const;
+
+	float GetStealthAudioEnvelopeTarget() const;
+	void UpdateStalkerStealthAudioEnvelope(float DeltaSeconds);
 };
