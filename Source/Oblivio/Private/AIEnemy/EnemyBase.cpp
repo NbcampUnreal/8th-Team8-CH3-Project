@@ -75,11 +75,6 @@ void AEnemyBase::Tick(float DeltaSeconds)
 		return;
 	}
 
-	if (!bIsLightFrozen)
-	{
-		UpdateLightExposure(DeltaSeconds);
-	}
-
 	if (!IsValid(TargetActor))
 	{
 		FindDefaultTarget();
@@ -87,6 +82,11 @@ void AEnemyBase::Tick(float DeltaSeconds)
 
 	// 경직/빛정지 중에도 FSM은 갱신(Chase 등으로 전환). 이동·공격 스위치만 아래에서 생략.
 	UpdateState();
+
+	if (!bIsLightFrozen)
+	{
+		UpdateLightExposure(DeltaSeconds);
+	}
 
 	DrawAggroDebug();
 
@@ -671,11 +671,13 @@ void AEnemyBase::SetEnemyState(EEnemyAIState NewState)
 		return;
 	}
 
+	const EEnemyAIState OldState = EnemyState;
 	EnemyState = NewState;
 	if (NewState == EEnemyAIState::Idle && bEnableIdleWander)
 	{
 		IdleWanderRetargetCooldown = FMath::FRandRange(0.3f, 1.5f);
 	}
+	NotifyEnemyStateChanged(OldState, NewState);
 	UE_LOG(LogTemp, Verbose, TEXT("%s state changed to %s"), *GetNameSafe(this), *UEnum::GetValueAsString(EnemyState));
 }
 
@@ -694,15 +696,13 @@ void AEnemyBase::StopEnemyMovement()
 	}
 }
 
-// 매 틱 LightExposure 선형 감쇠(빛 압박 완화)
+// 매 틱 LightExposure 선형 감쇠 + 이속 갱신(FSM 전환 직후에도 Chase/Wander 반영)
 void AEnemyBase::UpdateLightExposure(float DeltaSeconds)
 {
-	if (LightExposure <= 0.0f || LightExposureDecayPerSecond <= 0.0f)
+	if (LightExposure > 0.0f && LightExposureDecayPerSecond > 0.0f)
 	{
-		return;
+		LightExposure = FMath::Max(0.0f, LightExposure - LightExposureDecayPerSecond * DeltaSeconds);
 	}
-
-	LightExposure = FMath::Max(0.0f, LightExposure - LightExposureDecayPerSecond * DeltaSeconds);
 	if (IsAlive())
 	{
 		RefreshWalkSpeedFromSources();
@@ -742,7 +742,20 @@ void AEnemyBase::RefreshWalkSpeedFromSources()
 
 	const float LightMult = ComputeLightSpeedMultiplier();
 	const float CCSlowMult = bCCSlowActive ? CCSlowSpeedMultiplier : 1.0f;
-	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed * LightMult * CCSlowMult;
+	const float BaseSpeed = GetLocomotionBaseSpeed();
+	GetCharacterMovement()->MaxWalkSpeed = BaseSpeed * LightMult * CCSlowMult;
+}
+
+float AEnemyBase::GetLocomotionBaseSpeed() const
+{
+	const bool bCombatLocomotion =
+		EnemyState == EEnemyAIState::Chase ||
+		EnemyState == EEnemyAIState::Attack;
+	if (bCombatLocomotion && ChaseMoveSpeed > KINDA_SMALL_NUMBER)
+	{
+		return ChaseMoveSpeed;
+	}
+	return MoveSpeed;
 }
 
 void AEnemyBase::DrawAggroDebug()

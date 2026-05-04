@@ -6,6 +6,7 @@ ABasicEnemy::ABasicEnemy()
 	MaxHealth = 100.0f;
 	CurrentHealth = MaxHealth;
 	MoveSpeed = 350.0f;
+	ChaseMoveSpeed = 420.0f;
 	AttackDamage = 10.0f;
 	AttackRange = 150.0f;
 	AttackCooldown = 1.0f;
