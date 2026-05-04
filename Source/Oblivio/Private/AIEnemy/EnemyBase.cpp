@@ -1,6 +1,7 @@
-#include "AIEnemy/EnemyBase.h"
+﻿#include "AIEnemy/EnemyBase.h"
 #include "AIEnemy/EnemyAIController.h"
 #include "AIController.h"
+#include "OblivioGameMode.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/DamageType.h"
@@ -654,6 +655,12 @@ void AEnemyBase::Die()
 	OnEnemyDied.Broadcast(this);
 
 	SetLifeSpan(FMath::Max(0.0f, CorpseLifeSpan));
+
+	//추가: 인스턴스에서 킬카운트를 기록
+	if (AOblivioGameMode* GM = Cast<AOblivioGameMode>(UGameplayStatics::GetGameMode(GetWorld())))
+	{
+		GM->AddMonsterKill();
+	}
 }
 
 // 동일 상태면 무시(로그 스팸 방지). Verbose 로그만 출력
