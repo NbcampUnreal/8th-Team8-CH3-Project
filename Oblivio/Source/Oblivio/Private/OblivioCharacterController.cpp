@@ -89,8 +89,12 @@ void AOblivioCharacterController::OnLook(const FInputActionValue& Value)
 
 void AOblivioCharacterController::OnWheel(const FInputActionValue& Value)
 {
-	if (AOblivioCharacter* ObjChar = Cast<AOblivioCharacter>(GetPawn()))
+	UE_LOG(LogTemp, Warning, TEXT("OnWheel"));
+	if (AOblivioCharacter* ObjChar = Cast<AOblivioCharacter>(GetPawn())) {
+		UE_LOG(LogTemp, Warning, TEXT("OnWheel action"));
 		ObjChar->AdjustFocus(Value.Get<float>());
+	}
+		
 }
 
 void AOblivioCharacterController::OnRunStarted(const FInputActionValue& Value)

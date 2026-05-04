@@ -33,5 +33,8 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	virtual void UseWeapon();
+	
+	virtual void StopWeapon();
 
+	virtual void ChangeWeaponAngle(float DeltaAngle);
 };

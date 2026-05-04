@@ -1,0 +1,26 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "WeaponBase.h"
+#include "Flashlight.generated.h"
+
+/**
+ * 
+ */
+UCLASS()
+class OBLIVIO_API AFlashlight : public AWeaponBase
+{
+	GENERATED_BODY()
+public:
+	AFlashlight();
+	virtual void BeginPlay() override;
+	virtual void UseWeapon() override;
+	virtual void StopWeapon() override;
+	virtual void ChangeWeaponAngle(float DeltaAngle) override;
+protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Attack)
+	float AttackInterval;
+	FTimerHandle AttackTimerHandle;
+};

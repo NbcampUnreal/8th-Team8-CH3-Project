@@ -1,9 +1,11 @@
 ﻿#include "OblivioCharacter.h"
-#include "GameFramework/SpringArmComponent.h"
+#include "WeaponBase.h"
+
 #include "Camera/CameraComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 
 AOblivioCharacter::AOblivioCharacter()
@@ -31,12 +33,28 @@ AOblivioCharacter::AOblivioCharacter()
 
 	GetCharacterMovement()->bOrientRotationToMovement = false;
 	bUseControllerRotationYaw = false;
+
+	WheelControlMultiplier = 3.f;
 }
 
 void AOblivioCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	UpdateFlashlightVisuals();
+
+	//시작시 손전등 장착
+	if (IsValid(FlashlightWeapon)) {
+		UE_LOG(LogTemp, Warning, TEXT("Spawning Weapon"));
+		FActorSpawnParameters Params;
+		Params.Owner = this;
+		CurrentWeapon = GetWorld()->SpawnActor<AWeaponBase>(FlashlightWeapon, GetActorTransform(), Params);
+		if (IsValid(CurrentWeapon)) {
+			UE_LOG(LogTemp, Warning, TEXT("Attaching Weapon"));
+			CurrentWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		}
+
+	}
+	FlashlightComponent->SetVisibility(false);
 }
 
 void AOblivioCharacter::Tick(float DeltaTime)
@@ -77,8 +95,11 @@ void AOblivioCharacter::Move(const FVector2D& Value)
 void AOblivioCharacter::AdjustFocus(float Value)
 {
 	if (!bCanAdjustFocus) return;
+	/*
 	CurrentFocusAlpha = FMath::Clamp(CurrentFocusAlpha + (Value * 0.1f), 0.0f, 1.0f);
-	UpdateFlashlightVisuals();
+	UpdateFlashlightVisuals();*/
+	CurrentWeapon->ChangeWeaponAngle(Value * WheelControlMultiplier);
+
 }
 
 void AOblivioCharacter::StartRunning() { bIsRunning = true; }
@@ -172,8 +193,8 @@ void AOblivioCharacter::UpdateStatus(float DeltaTime)
 		if (Battery <= 0.0f)
 		{
 			bIsFlashlightOn = false;
-			UpdateFlashlightVisuals();
 		}
+		UpdateFlashlightVisuals();
 	}
 
 	if (Hunger <= 0.0f || Thirst <= 0.0f) Health -= DeltaTime * 1.0f;
@@ -182,6 +203,16 @@ void AOblivioCharacter::UpdateStatus(float DeltaTime)
 
 void AOblivioCharacter::UpdateFlashlightVisuals()
 {
+	
+	if (!IsValid(CurrentWeapon)) return;
+	
+	if (bIsFlashlightOn) {	//On
+		CurrentWeapon->UseWeapon();
+	}
+	else {	//Off
+		CurrentWeapon->StopWeapon();
+	}
+	/* 무기로 대체
 	if (!FlashlightComponent) return;
 	FlashlightComponent->SetVisibility(bIsFlashlightOn);
 	if (bIsFlashlightOn)
@@ -190,5 +221,5 @@ void AOblivioCharacter::UpdateFlashlightVisuals()
 		float TargetRadius = FMath::Lerp(600.0f, 1800.0f, CurrentFocusAlpha);
 		FlashlightComponent->SetOuterConeAngle(TargetAngle);
 		FlashlightComponent->SetAttenuationRadius(TargetRadius);
-	}
+	}*/
 }

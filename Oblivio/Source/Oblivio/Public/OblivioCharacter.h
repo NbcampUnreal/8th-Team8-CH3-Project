@@ -5,6 +5,7 @@
 #include "InputActionValue.h"
 #include "OblivioCharacter.generated.h"
 
+class AWeaponBase;
 UCLASS()
 class OBLIVIO_API AOblivioCharacter : public ACharacter
 {
@@ -38,6 +39,17 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flashlight")
 	class USpotLightComponent* FlashlightComponent;
+
+	//무기 클래스
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TSubclassOf<AWeaponBase> FlashlightWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TSubclassOf<AWeaponBase> FlashbangWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TSubclassOf<AWeaponBase> FlareWeapon;
+	TObjectPtr<AWeaponBase> CurrentWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float WheelControlMultiplier;
 
 	//생존 스탯 및 상태 변수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")

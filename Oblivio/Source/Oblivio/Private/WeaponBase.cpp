@@ -23,7 +23,6 @@ AWeaponBase::AWeaponBase()
 void AWeaponBase::BeginPlay()
 {
 	Super::BeginPlay();
-	UseWeapon();
 }
 
 // Called every frame
@@ -35,7 +34,17 @@ void AWeaponBase::Tick(float DeltaTime)
 
 void AWeaponBase::UseWeapon()
 {
-	UE_LOG(LogTemp, Warning, TEXT("UseWeapon Called"));
-	LightAttackComp->CreateLightAttack(GetActorLocation(), GetActorForwardVector());
+	//LightAttackComp->CreateLightAttack(GetActorLocation(), GetActorForwardVector());
+}
+
+void AWeaponBase::StopWeapon()
+{
+	//LightAttackComp->TurnOffLight();
+}
+
+void AWeaponBase::ChangeWeaponAngle(float DeltaAngle)
+{
+	//UE_LOG(LogTemp, Warning, TEXT("ChangeWeaponAngle Called"));
+	//LightAttackComp->ChangeLightAngle(DeltaAngle);
 }
 
