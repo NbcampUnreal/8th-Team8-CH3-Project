@@ -1,10 +1,17 @@
 #pragma once
 
+// =============================================================================
+// AEnemySpawner — 웨이브별로 적 클래스·마릿수·스폰 간격을 큐에 넣고 순차 스폰.
+// · SpawnPoints: 비어 있으면 스포너 액터 위치/회전 사용, 있으면 무작위 한 지점
+// · 활성 적은 OnEnemyDied 바인딩으로 추적 → 대기 큐·살아 있는 적 모두 없을 때 웨이브 완료
+// =============================================================================
+
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "AIEnemy/EnemyBase.h"
 #include "EnemySpawner.generated.h"
 
+/** 웨이브 한 줄: 동일 클래스를 Count번, 각 스폰 사이 SpawnInterval(초) */
 USTRUCT(BlueprintType)
 struct FEnemyWaveEntry
 {
@@ -20,6 +27,7 @@ struct FEnemyWaveEntry
 	float SpawnInterval = 1.0f;
 };
 
+/** 하나의 웨이브 = 여러 Entry 순서대로 펼쳐서 스폰 큐에 넣음 */
 USTRUCT(BlueprintType)
 struct FEnemyWaveDefinition
 {
@@ -29,7 +37,9 @@ struct FEnemyWaveDefinition
 	TArray<FEnemyWaveEntry> Entries;
 };
 
+/** (웨이브 인덱스, 이번 웨이브에 예정된 총 스폰 수) */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnemyWaveStartedSignature, int32, WaveIndex, int32, TotalEnemies);
+/** 방금 끝난 웨이브 인덱스 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEnemyWaveCompletedSignature, int32, WaveIndex);
 
 UCLASS(Blueprintable)
@@ -40,12 +50,15 @@ class OBLIVIO_API AEnemySpawner : public AActor
 public:
 	AEnemySpawner();
 
+	/** 지정 웨이브 인덱스로 큐 구성 후 스폰 시작(진행 중이면 Stop 후 재시작) */
 	UFUNCTION(BlueprintCallable, Category = "Wave")
 	void StartWave(int32 WaveIndex);
 
+	/** 현재 다음 웨이브, 마지막이면 bLoopWaves면 0번으로 */
 	UFUNCTION(BlueprintCallable, Category = "Wave")
 	void StartNextWave();
 
+	/** 타이머·대기 큐·활성 적 리스트 정리(삭제 아님, 구독만 해제) */
 	UFUNCTION(BlueprintCallable, Category = "Wave")
 	void StopWave();
 
@@ -64,6 +77,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave")
 	TArray<FEnemyWaveDefinition> Waves;
 
+	/** 비어 있으면 스포너 자기 Transform으로 스폰 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave")
 	TArray<TObjectPtr<AActor>> SpawnPoints;
 
@@ -77,6 +91,7 @@ protected:
 	bool bLoopWaves = false;
 
 private:
+	/** StartWave에서 펼쳐 넣는 스폰 한 건(다음 스폰까지 대기 시간 포함) */
 	struct FPendingEnemySpawn
 	{
 		TSubclassOf<AEnemyBase> EnemyClass;
@@ -88,6 +103,7 @@ private:
 
 	void SpawnNextEnemy();
 	FTransform GetSpawnTransform() const;
+	/** 대기 큐 비었고 ActiveEnemies도 비었으면 OnWaveCompleted */
 	void CheckWaveCompleted();
 
 	UPROPERTY()
