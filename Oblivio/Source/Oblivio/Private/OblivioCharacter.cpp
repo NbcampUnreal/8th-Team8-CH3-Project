@@ -1,4 +1,5 @@
 ﻿#include "OblivioCharacter.h"
+#include "OblivioGameMode.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/PointLightComponent.h"
@@ -6,6 +7,7 @@
 #include "Crafting/OblivioCrafting.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include <Kismet/GameplayStatics.h>
 
 AOblivioCharacter::AOblivioCharacter()
 {
@@ -162,6 +164,23 @@ void AOblivioCharacter::Interact()
 	if (GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Interacted with: %s"), *HitResult.GetActor()->GetName());
+		//추가: 열쇠/유품 획득 시 정보 저장
+		AActor* HitActor = HitResult.GetActor();
+		AOblivioGameMode* GM = Cast<AOblivioGameMode>(UGameplayStatics::GetGameMode(GetWorld()));
+		if (!GM) return;
+		if (HitActor->ActorHasTag("Key"))
+		{
+			GM->CollectedKeys++;
+			UE_LOG(LogTemp, Warning, TEXT("You Get a Key! Current: %d / %d"), GM->CollectedKeys, GM->RequiredKeys);
+			HitActor->Destroy();
+		}
+		else if (HitActor->ActorHasTag("Memento"))
+		{
+			GM->AddMemento();
+			UE_LOG(LogTemp, Warning, TEXT("Get Memento!"));
+			HitActor->Destroy();
+		}
+		//----
 	}
 }
 
@@ -185,6 +204,16 @@ void AOblivioCharacter::UpdateStatus(float DeltaTime)
 
 	if (Hunger <= 0.0f || Thirst <= 0.0f) Health -= DeltaTime * 1.0f;
 	GetCharacterMovement()->MaxWalkSpeed = bIsRunning ? RunSpeed : WalkSpeed;
+
+	//추가: 체력 0이 되면 게임오버
+	if (Health <= 0 && bIsDead == false)
+	{
+		bIsDead = true;
+		DisableInput(Cast<APlayerController>(GetController()));
+		AOblivioGameMode* GM = Cast<AOblivioGameMode>(UGameplayStatics::GetGameMode(GetWorld()));
+		if (!GM) return;
+		GM->GameOver();
+	}
 }
 
 void AOblivioCharacter::UpdateFlashlightVisuals()

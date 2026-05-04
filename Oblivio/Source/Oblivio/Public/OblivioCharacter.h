@@ -84,6 +84,8 @@ public:
 	bool bIsInventoryOpen = false;
 	bool bIsCraftingOpen = false;
 	float CurrentFocusAlpha = 0.5f;
+	//추가: 죽었는지 체크
+	bool bIsDead = false;
 
 	void UpdateStatus(float DeltaTime);
 	void UpdateFlashlightVisuals();
