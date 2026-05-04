@@ -128,8 +128,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Stats")
 	float CurrentHealth = 100.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Stats", meta = (ClampMin = "0.0"))
+	/** 배회·Patrol·Search·Investigate 등 비추격 이동 기준 이속(cm/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats", meta = (ClampMin = "0.0"))
 	float MoveSpeed = 350.0f;
+
+	/** Chase·Attack 시 이속. 0이면 MoveSpeed와 동일. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats", meta = (ClampMin = "0.0"))
+	float ChaseMoveSpeed = 0.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0.0"))
 	float AttackDamage = 10.0f;
@@ -246,6 +251,9 @@ protected:
 	virtual void Die();
 
 	void SetEnemyState(EEnemyAIState NewState);
+
+	/** SetEnemyState에서 실제로 바뀐 직후 호출(Old→New). 기본 빈 구현. */
+	virtual void NotifyEnemyStateChanged(EEnemyAIState OldState, EEnemyAIState NewState) {}
 	bool IsTargetInAttackRange() const;
 	bool HasValidAggroTarget() const;
 	void StopEnemyMovement();
@@ -253,6 +261,8 @@ protected:
 	void RestoreMovementAfterLight();
 
 	void RefreshWalkSpeedFromSources();
+	/** Chase·Attack vs 그 외 이동 기준 이속. 파생 클래스에서 절름발이 추격자 등 이단 속도용 오버라이드. */
+	virtual float GetLocomotionBaseSpeed() const;
 	float ComputeLightSpeedMultiplier() const;
 	void OnCCSlowExpired();
 	void OnCCStunExpired();
