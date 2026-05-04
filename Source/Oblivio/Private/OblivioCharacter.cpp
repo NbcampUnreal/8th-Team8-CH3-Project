@@ -4,6 +4,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SpotLightComponent.h"
+#include "Crafting/OblivioCrafting.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include <Kismet/GameplayStatics.h>
@@ -30,6 +31,8 @@ AOblivioCharacter::AOblivioCharacter()
 	FlashbangLight->SetIntensity(0.0f); // 평소에는 꺼둠
 	FlashbangLight->SetCastShadows(false);
 	FlashbangLight->SetAttenuationRadius(800.0f);
+
+	CraftingComponent = CreateDefaultSubobject<UOblivioCrafting>(TEXT("CraftingComponent"));
 
 	GetCharacterMovement()->bOrientRotationToMovement = false;
 	bUseControllerRotationYaw = false;
@@ -143,7 +146,11 @@ void AOblivioCharacter::ToggleInventory()
 
 void AOblivioCharacter::ToggleCrafting()
 {
-	bIsCraftingOpen = !bIsCraftingOpen;
+	if (CraftingComponent)
+	{
+		CraftingComponent->ToggleCraftingMode();
+		bIsCraftingOpen = CraftingComponent->bIsCraftingModeActive;
+	}
 }
 
 void AOblivioCharacter::Interact()

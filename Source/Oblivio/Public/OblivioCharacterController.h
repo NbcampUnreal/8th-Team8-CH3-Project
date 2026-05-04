@@ -49,6 +49,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Input")
 	class UInputAction* CraftingAction;
 
+	UPROPERTY(EditAnyWhere, Category = "Input")
+	class UInputAction* PlaceObstacleAction;
+
 	UPROPERTY(EditAnywhere, Category = "Input")
 	class UInputAction* InteractAction;
 
@@ -62,12 +65,23 @@ protected:
 	void OnFlashbang(const FInputActionValue& Value);
 	void OnInventoryToggle(const FInputActionValue& Value);
 	void OnCraftingToggle(const FInputActionValue& Value);
+	void OnPlaceObstacle(const FInputActionValue& Value);
 	void OnInteract(const FInputActionValue& Value);
 
 	void UpdateMouseRotation();
 
+	//크래프팅 전용
+	UPROPERTY(EditAnywhere, Category = "Input")
+	class UInputMappingContext* CraftingMappingContext;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	class UInputAction* SelectObstacleAction;
+
+	void OnSelectObstacle(const FInputActionValue& Value);
 
 private:
 	bool bIsInventoryOpen = false;
 	bool bIsCraftingOpen = false;
+
+	int32 CurrentSelectedIndex = 0;
 };
