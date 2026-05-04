@@ -5,6 +5,8 @@
 #include "InputActionValue.h"
 #include "OblivioCharacter.generated.h"
 
+class UOblivioCrafting;
+
 UCLASS()
 class OBLIVIO_API AOblivioCharacter : public ACharacter
 {
@@ -27,6 +29,7 @@ public:
 	void AdjustFocus(float Value);
 	void ToggleInventory();
 	void ToggleCrafting();
+	void PlaceObstacle();
 	void Interact();
 
 	//컴포넌트
@@ -38,6 +41,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flashlight")
 	class USpotLightComponent* FlashlightComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
+	UOblivioCrafting* CraftingComponent;
 
 	//생존 스탯 및 상태 변수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
@@ -64,7 +70,7 @@ public:
 	bool bIsFlashlightOn = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status|Upgrade")
-	bool bCanAdjustFocus = false;
+	bool bCanAdjustFocus = true;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flashlight")
 	class UPointLightComponent* FlashbangLight;
