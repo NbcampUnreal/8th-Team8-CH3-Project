@@ -110,6 +110,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy|Stats")
 	float GetHealthPercent() const { return MaxHealth > 0.0f ? CurrentHealth / MaxHealth : 0.0f; }
 
+	/** 적 SFX 볼륨 배율(0=무음, 1=기본). BP Class Defaults 또는 옵션에서 SetEnemySoundVolumeMultiplier. */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Audio")
+	void SetEnemySoundVolumeMultiplier(float NewMultiplier);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Audio")
+	float GetEnemySoundVolumeMultiplier() const { return EnemySoundVolumeMultiplier; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events")
 	FEnemyDiedSignature OnEnemyDied;
 
@@ -128,8 +135,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Stats")
 	float CurrentHealth = 100.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Stats", meta = (ClampMin = "0.0"))
+	/** 배회·Patrol·Search·Investigate 등 비추격 이동 기준 이속(cm/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats", meta = (ClampMin = "0.0"))
 	float MoveSpeed = 350.0f;
+
+	/** Chase·Attack 시 이속. 0이면 MoveSpeed와 동일. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats", meta = (ClampMin = "0.0"))
+	float ChaseMoveSpeed = 0.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0.0"))
 	float AttackDamage = 10.0f;
@@ -222,6 +234,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
 	float CorpseLifeSpan = 3.0f;
 
+	/** 리얼·루프 등 적 오디오 총괄 배율. 파생 클래스는 ApplyEnemySoundVolumes에서 컴포넌트에 반영. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Audio", meta = (ClampMin = "0.0", ClampMax = "4.0"))
+	float EnemySoundVolumeMultiplier = 1.0f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|State")
 	EEnemyAIState EnemyState = EEnemyAIState::Idle;
 
@@ -246,6 +262,9 @@ protected:
 	virtual void Die();
 
 	void SetEnemyState(EEnemyAIState NewState);
+
+	/** SetEnemyState에서 실제로 바뀐 직후 호출(Old→New). 기본 빈 구현. */
+	virtual void NotifyEnemyStateChanged(EEnemyAIState OldState, EEnemyAIState NewState) {}
 	bool IsTargetInAttackRange() const;
 	bool HasValidAggroTarget() const;
 	void StopEnemyMovement();
@@ -253,10 +272,15 @@ protected:
 	void RestoreMovementAfterLight();
 
 	void RefreshWalkSpeedFromSources();
+	/** Chase·Attack vs 그 외 이동 기준 이속. 파생 클래스에서 절름발이 추격자 등 이단 속도용 오버라이드. */
+	virtual float GetLocomotionBaseSpeed() const;
 	float ComputeLightSpeedMultiplier() const;
 	void OnCCSlowExpired();
 	void OnCCStunExpired();
 	void DrawAggroDebug();
+
+	/** SetEnemySoundVolumeMultiplier 이후 호출 — 스토커 등 오디오 컴포넌트 동기화용. */
+	virtual void ApplyEnemySoundVolumes();
 
 private:
 	float LastAttackTime = -BIG_NUMBER;

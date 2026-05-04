@@ -1,4 +1,6 @@
-#include "AIEnemy/EnemySpawner.h"
+﻿#include "AIEnemy/EnemySpawner.h"
+#include "OblivioGameInstance.h"
+#include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -16,10 +18,28 @@ AEnemySpawner::AEnemySpawner()
 void AEnemySpawner::BeginPlay()
 {
 	Super::BeginPlay();
-
+	/*
 	if (bAutoStart)
 	{
 		StartWave(AutoStartWaveIndex);
+	}
+	*/
+
+	//추가: 인스턴스에서 층수를 받아와서 해당 층별로 맞는 몬스터를 스폰하고자 코드를 수정했습니다.
+	//기존 코드는 주석처리만 했으니 확인해보시고 기존 게 더 설계 의도에 적합하시면 삭제하셔도 무방합니다.
+	UOblivioGameInstance* GI = Cast<UOblivioGameInstance>(GetGameInstance());
+	if (!GI) return;
+
+	//층수에 따른 웨이브 인덱스 계산
+	int32 TargetWaveIndex = 9 - GI->CurrentFloor;
+
+	//모든 스포너에 해당 웨이브 시작 지시
+	for (TActorIterator<AEnemySpawner> It(GetWorld()); It; ++It)
+	{
+		if (AEnemySpawner* Spawner = *It)
+		{
+			Spawner->StartWave(TargetWaveIndex);
+		}
 	}
 }
 
