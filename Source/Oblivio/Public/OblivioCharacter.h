@@ -43,7 +43,7 @@ public:
 	class USpotLightComponent* FlashlightComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
-	UOblivioCrafting* CraftingComponent;
+	class  UOblivioCrafting* CraftingComponent;
 
 	//생존 스탯 및 상태 변수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
