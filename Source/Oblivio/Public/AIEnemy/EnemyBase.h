@@ -110,6 +110,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy|Stats")
 	float GetHealthPercent() const { return MaxHealth > 0.0f ? CurrentHealth / MaxHealth : 0.0f; }
 
+	/** 적 SFX 볼륨 배율(0=무음, 1=기본). BP Class Defaults 또는 옵션에서 SetEnemySoundVolumeMultiplier. */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Audio")
+	void SetEnemySoundVolumeMultiplier(float NewMultiplier);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Audio")
+	float GetEnemySoundVolumeMultiplier() const { return EnemySoundVolumeMultiplier; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events")
 	FEnemyDiedSignature OnEnemyDied;
 
@@ -227,6 +234,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
 	float CorpseLifeSpan = 3.0f;
 
+	/** 리얼·루프 등 적 오디오 총괄 배율. 파생 클래스는 ApplyEnemySoundVolumes에서 컴포넌트에 반영. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Audio", meta = (ClampMin = "0.0", ClampMax = "4.0"))
+	float EnemySoundVolumeMultiplier = 1.0f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|State")
 	EEnemyAIState EnemyState = EEnemyAIState::Idle;
 
@@ -267,6 +278,9 @@ protected:
 	void OnCCSlowExpired();
 	void OnCCStunExpired();
 	void DrawAggroDebug();
+
+	/** SetEnemySoundVolumeMultiplier 이후 호출 — 스토커 등 오디오 컴포넌트 동기화용. */
+	virtual void ApplyEnemySoundVolumes();
 
 private:
 	float LastAttackTime = -BIG_NUMBER;

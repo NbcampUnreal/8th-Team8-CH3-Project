@@ -29,12 +29,15 @@ void AStalkerEnemy::BeginPlay()
 {
 	Super::BeginPlay();
 
+	StealthAudioEnvelope = 0.0f;
+
 	if (StalkerAudioComponent && StalkerRevealLoopSound)
 	{
 		StalkerAudioComponent->SetSound(StalkerRevealLoopSound);
 	}
 
 	UpdateFlashlightReveal();
+	UpdateStalkerStealthAudioEnvelope(0.0f);
 }
 
 void AStalkerEnemy::Tick(float DeltaSeconds)
@@ -45,12 +48,19 @@ void AStalkerEnemy::Tick(float DeltaSeconds)
 	}
 	Super::Tick(DeltaSeconds);
 	UpdateFlashlightReveal();
+	UpdateStalkerStealthAudioEnvelope(DeltaSeconds);
 }
 
 void AStalkerEnemy::Die()
 {
 	ApplyFlashlightReveal(true);
 	Super::Die();
+
+	StealthAudioEnvelope = 0.0f;
+	if (StalkerAudioComponent)
+	{
+		StalkerAudioComponent->Stop();
+	}
 }
 
 void AStalkerEnemy::NotifyEnemyStateChanged(EEnemyAIState OldState, EEnemyAIState NewState)
@@ -167,6 +177,50 @@ bool AStalkerEnemy::ComputeInPlayerFlashlightCone() const
 	return FVector::DotProduct(Dir, ToNorm) >= CosCone - KINDA_SMALL_NUMBER;
 }
 
+float AStalkerEnemy::GetStealthAudioEnvelopeTarget() const
+{
+	if (EnemyState == EEnemyAIState::Dead)
+	{
+		return 0.0f;
+	}
+	if (!bFlashlightStealth)
+	{
+		return 1.0f;
+	}
+	return ComputeInPlayerFlashlightCone() ? 1.0f : 0.0f;
+}
+
+void AStalkerEnemy::UpdateStalkerStealthAudioEnvelope(float DeltaSeconds)
+{
+	if (!StalkerAudioComponent || !StalkerRevealLoopSound)
+	{
+		return;
+	}
+
+	const float Target = GetStealthAudioEnvelopeTarget();
+	const float AttackRate = FMath::Max(StalkerAudioAttackSeconds, 0.01f);
+	const float ReleaseRate = FMath::Max(StalkerAudioReleaseSeconds, 0.01f);
+	const float Speed = 1.0f / ((Target > StealthAudioEnvelope + KINDA_SMALL_NUMBER) ? AttackRate : ReleaseRate);
+
+	StealthAudioEnvelope = FMath::FInterpConstantTo(StealthAudioEnvelope, Target, DeltaSeconds, Speed);
+	StealthAudioEnvelope = FMath::Clamp(StealthAudioEnvelope, 0.0f, 1.0f);
+
+	const float OutVol = StealthAudioEnvelope * FMath::Max(0.0f, EnemySoundVolumeMultiplier);
+	StalkerAudioComponent->SetVolumeMultiplier(OutVol);
+
+	if (OutVol > 0.02f)
+	{
+		if (!StalkerAudioComponent->IsPlaying())
+		{
+			StalkerAudioComponent->Play();
+		}
+	}
+	else if (StalkerAudioComponent->IsPlaying())
+	{
+		StalkerAudioComponent->Stop();
+	}
+}
+
 void AStalkerEnemy::ApplyFlashlightReveal(bool bRevealed)
 {
 	const bool bChanged = (bRevealedByFlashlight != bRevealed);
@@ -178,26 +232,6 @@ void AStalkerEnemy::ApplyFlashlightReveal(bool bRevealed)
 		SkelMesh->SetCastShadow(bRevealed);
 	}
 
-	if (StalkerAudioComponent)
-	{
-		if (bRevealed)
-		{
-			StalkerAudioComponent->SetVolumeMultiplier(1.0f);
-			if (StalkerRevealLoopSound && !StalkerAudioComponent->IsPlaying())
-			{
-				StalkerAudioComponent->Play();
-			}
-		}
-		else
-		{
-			StalkerAudioComponent->SetVolumeMultiplier(0.0f);
-			if (bChanged && StalkerAudioComponent->IsPlaying())
-			{
-				StalkerAudioComponent->Stop();
-			}
-		}
-	}
-
 	if (bChanged)
 	{
 		OnFlashlightRevealChanged(bRevealed);
@@ -207,4 +241,17 @@ void AStalkerEnemy::ApplyFlashlightReveal(bool bRevealed)
 void AStalkerEnemy::OnFlashlightRevealChanged_Implementation(bool bRevealed)
 {
 	(void)bRevealed;
+}
+
+void AStalkerEnemy::ApplyEnemySoundVolumes()
+{
+	Super::ApplyEnemySoundVolumes();
+
+	if (!StalkerAudioComponent)
+	{
+		return;
+	}
+
+	const float OutVol = StealthAudioEnvelope * FMath::Max(0.0f, EnemySoundVolumeMultiplier);
+	StalkerAudioComponent->SetVolumeMultiplier(OutVol);
 }
