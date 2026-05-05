@@ -55,6 +55,7 @@ void AOblivioCharacterController::SetupInputComponent()
 		EIC->BindAction(RunAction, ETriggerEvent::Completed, this, &AOblivioCharacterController::OnRunCompleted);
 		EIC->BindAction(FlashlightToggleAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnFlashlightToggle);
 		EIC->BindAction(FlashbangAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnFlashbang);
+		EIC->BindAction(FlareAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnFlare);
 		EIC->BindAction(InventoryAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnInventoryToggle);
 		EIC->BindAction(CraftingAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnCraftingToggle);
 		EIC->BindAction(PlaceObstacleAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnPlaceObstacle);
@@ -122,6 +123,11 @@ void AOblivioCharacterController::OnFlashbang(const FInputActionValue& Value)
 {
 	if (AOblivioCharacter* ObjChar = Cast<AOblivioCharacter>(GetPawn()))
 		ObjChar->UseFlashbang();
+}
+void AOblivioCharacterController::OnFlare(const FInputActionValue& Value)
+{
+	if (AOblivioCharacter* ObjChar = Cast<AOblivioCharacter>(GetPawn()))
+		ObjChar->UseFlare();
 }
 
 void AOblivioCharacterController::OnInventoryToggle(const FInputActionValue& Value)

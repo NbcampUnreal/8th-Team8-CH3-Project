@@ -44,6 +44,9 @@ protected:
 	class UInputAction* FlashbangAction;
 
 	UPROPERTY(EditAnywhere, Category = "Input")
+	class UInputAction* FlareAction;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
 	class UInputAction* InventoryAction;
 
 	UPROPERTY(EditAnywhere, Category = "Input")
@@ -63,6 +66,7 @@ protected:
 	void OnRunCompleted(const FInputActionValue& Value);
 	void OnFlashlightToggle(const FInputActionValue& Value);
 	void OnFlashbang(const FInputActionValue& Value);
+	void OnFlare(const FInputActionValue& Value);
 	void OnInventoryToggle(const FInputActionValue& Value);
 	void OnCraftingToggle(const FInputActionValue& Value);
 	void OnPlaceObstacle(const FInputActionValue& Value);

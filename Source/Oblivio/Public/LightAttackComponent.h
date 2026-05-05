@@ -15,7 +15,7 @@ class OBLIVIO_API ULightAttackComponent : public USceneComponent, public ILightA
 {
 	GENERATED_BODY()
 
-public:	
+public:
 	// Sets default values for this component's properties
 	ULightAttackComponent();
 
@@ -30,12 +30,24 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Light Attack")
 	TObjectPtr<UPointLightComponent> PointLightComp;   // bIsConcentrated
 
+	//빛 세기/시간
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Light)
 	float LightIntensityScale; //how strong the light intensity will be synced with the Damage value;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Light)
 	float LightTime;		//how long the lightsource will stay turned on after CreateLightAttack() called
 	FTimerHandle LightOffTimerHandle;
 	void TurnOffLight();
+
+	//각도 조절
+	void ChangeLightAngle(float Angle);
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Light)
+	float MinAngle;		//How narrowest the light can get
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Light)
+	float MaxAngle;		//How broadest the light can get
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Light)
+	float DistancePerAngle;		//Distance/angle trade ratio when changing the angle;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Light)
+	float DamagePerAngle;		//Damage/angle trade ratio when changing the angle;
 
 	//빛 데미지 판정용
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Light)
