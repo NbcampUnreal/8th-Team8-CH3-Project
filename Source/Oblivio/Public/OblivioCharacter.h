@@ -6,7 +6,8 @@
 #include "OblivioCharacter.generated.h"
 
 class UOblivioCrafting;
-
+class AWeaponBase;
+class AThrowableWeapon;
 UCLASS()
 class OBLIVIO_API AOblivioCharacter : public ACharacter
 {
@@ -26,6 +27,7 @@ public:
 	void StopRunning();
 	void ToggleFlashlight();
 	void UseFlashbang();
+	void UseFlare();
 	void AdjustFocus(float Value);
 	void ToggleInventory();
 	void ToggleCrafting();
@@ -44,6 +46,21 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	class  UOblivioCrafting* CraftingComponent;
+
+	//무기 클래스
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TSubclassOf<AWeaponBase> FlashlightWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TSubclassOf<AThrowableWeapon> FlashbangWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TSubclassOf<AThrowableWeapon> FlareWeapon;
+	TObjectPtr<AWeaponBase> CurrentWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	float WheelControlMultiplier;
+
+	//무기 투척 위치
+	FVector GetAimingLocation();
+	void ThrowWeapon(TSubclassOf<AThrowableWeapon> Weapon);
 
 	//생존 스탯 및 상태 변수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")

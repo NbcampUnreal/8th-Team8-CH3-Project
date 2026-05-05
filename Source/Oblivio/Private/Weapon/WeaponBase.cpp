@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "WeaponBase.h"
+#include "Weapon/WeaponBase.h"
 #include "LightAttackComponent.h"
 
 // Sets default values
@@ -14,6 +14,8 @@ AWeaponBase::AWeaponBase()
 
 	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
 	MeshComp->SetupAttachment(RootComponent);
+	MeshComp->SetCollisionProfileName("NoCollision");
+	MeshComp->SetSimulatePhysics(false);
 
 	LightAttackComp = CreateDefaultSubobject<ULightAttackComponent>(TEXT("LightAttackComp"));
 	LightAttackComp->SetupAttachment(RootComponent);
@@ -35,7 +37,16 @@ void AWeaponBase::Tick(float DeltaTime)
 
 void AWeaponBase::UseWeapon()
 {
-	UE_LOG(LogTemp, Warning, TEXT("UseWeapon Called"));
-	LightAttackComp->CreateLightAttack(GetActorLocation(), GetActorForwardVector());
+	//LightAttackComp->CreateLightAttack(GetActorLocation(), GetActorForwardVector());
 }
 
+void AWeaponBase::StopWeapon()
+{
+	//LightAttackComp->TurnOffLight();
+}
+
+void AWeaponBase::ChangeWeaponAngle(float DeltaAngle)
+{
+	//UE_LOG(LogTemp, Warning, TEXT("ChangeWeaponAngle Called"));
+	//LightAttackComp->ChangeLightAngle(DeltaAngle);
+}

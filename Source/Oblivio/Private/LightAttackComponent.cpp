@@ -1,6 +1,8 @@
 //LightAttackComponent.cpp
 
 #include "LightAttackComponent.h"
+#include "AIEnemy/EnemyBase.h"
+
 #include "Engine/OverlapResult.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SpotLightComponent.h"
@@ -11,19 +13,23 @@
 // Sets default values for this component's properties
 ULightAttackComponent::ULightAttackComponent()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
-	PrimaryComponentTick.bCanEverTick = false;
+    // Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
+    // off to improve performance if you don't need them.
+    PrimaryComponentTick.bCanEverTick = false;
     LightTime = 1.f;
-    LightIntensityScale = 500.f;
+    LightIntensityScale = 5000.f;
 
+    DistancePerAngle = 0.5f;
+    DamagePerAngle = 0.5f;
+    MinAngle = 30;
+    MinAngle = 160;
 
-	Damage = 1;
-	bIsConcentrated = false;
-	LightAngle = 30;
-	LightDistance = 500;
-	MaxDamageDistance = 100;
-	DamageAttenuationRate = 1.f;
+    Damage = 100;
+    bIsConcentrated = false;
+    LightAngle = 30;
+    LightDistance = 500;
+    MaxDamageDistance = 100;
+    DamageAttenuationRate = 1.f;
 }
 void ULightAttackComponent::OnRegister()
 {
@@ -49,12 +55,12 @@ void ULightAttackComponent::OnRegister()
 // Called when the game starts
 void ULightAttackComponent::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 
-	//광원 출력 수치와 동기화
+    //광원 출력 수치와 동기화
     if (IsValid(SpotLightComp)) {
         UE_LOG(LogTemp, Warning, TEXT("SpotLightComp light synced"));
-        SpotLightComp->SetAttenuationRadius(LightDistance);
+        SpotLightComp->SetAttenuationRadius(LightDistance * 10);
         SpotLightComp->SetIntensity(Damage * LightIntensityScale);
         // 시작시 안보이게 꺼놓기
         SpotLightComp->SetVisibility(false);
@@ -66,7 +72,7 @@ void ULightAttackComponent::BeginPlay()
     }
     if (IsValid(PointLightComp)) {
         UE_LOG(LogTemp, Warning, TEXT("PointLightComp light synced"));
-        PointLightComp->SetAttenuationRadius(LightDistance);
+        PointLightComp->SetAttenuationRadius(LightDistance * 10);
         PointLightComp->SetIntensity(Damage * LightIntensityScale);
         // 시작시 안보이게 꺼놓기
         PointLightComp->SetVisibility(false);
@@ -77,14 +83,13 @@ void ULightAttackComponent::BeginPlay()
 // Called every frame
 void ULightAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// ...
+    // ...
 }
 
 void ULightAttackComponent::CreateLightAttack(FVector SourceLocation, FVector LightDirection)
 {
-	UE_LOG(LogTemp,Warning, TEXT("CreateLightAttack executed in the location %f %f %f to the direction %f %f %f"), SourceLocation.X, SourceLocation.Y, SourceLocation.Z, LightDirection.X, LightDirection.Y, LightDirection.Z);
     FVector LightDir = LightDirection.GetSafeNormal();
     float HalfAngle = LightAngle / 2.f;
 
@@ -95,17 +100,16 @@ void ULightAttackComponent::CreateLightAttack(FVector SourceLocation, FVector Li
         FVector LeftBoundDir = LightDir.RotateAngleAxis(HalfAngle, FVector::UpVector);
         FVector RightBoundDir = LightDir.RotateAngleAxis(-HalfAngle, FVector::UpVector);
 
-        DrawDebugLine(GetWorld(), SourceLocation, SourceLocation + LeftBoundDir * LightDistance, FColor::Yellow, false, 2.0f);
-        DrawDebugLine(GetWorld(), SourceLocation, SourceLocation + RightBoundDir * LightDistance, FColor::Yellow, false, 2.0f);
+        DrawDebugLine(GetWorld(), SourceLocation, SourceLocation + LeftBoundDir * LightDistance, FColor::Yellow, false, .02f);
+        DrawDebugLine(GetWorld(), SourceLocation, SourceLocation + RightBoundDir * LightDistance, FColor::Yellow, false, .02f);
     }
     else
     {
         // 전방위 구형 범위
-        DrawDebugSphere(GetWorld(), SourceLocation, LightDistance, 16, FColor::Yellow, false, 2.0f);
+        //DrawDebugSphere(GetWorld(), SourceLocation, LightDistance, 16, FColor::Yellow, false, .5f);
     }
 
     //광원 출력
-    UE_LOG(LogTemp, Warning, TEXT("Turning the spotlight on"));
     if (bIsConcentrated) {
         if (IsValid(SpotLightComp)) {
             SpotLightComp->SetVisibility(true);
@@ -118,29 +122,28 @@ void ULightAttackComponent::CreateLightAttack(FVector SourceLocation, FVector Li
     }
     GetWorld()->GetTimerManager().SetTimer(LightOffTimerHandle, this, &ULightAttackComponent::TurnOffLight, LightTime, false);
 
-	//LightDistance안의 모든 적 액터 얻기
-	TArray<FOverlapResult> OverlapResults;
-	FCollisionShape Sphere = FCollisionShape::MakeSphere(LightDistance);
+    //LightDistance안의 모든 적 얻기
+    TArray<AActor*> OverlapActors;
 
-	GetWorld()->OverlapMultiByChannel(
-        OverlapResults,
-		SourceLocation,
-		FQuat::Identity,
-		ECC_Pawn,
-		Sphere
-	);
-	if (OverlapResults.IsEmpty()) return;
-    UE_LOG(LogTemp, Warning, TEXT("Found %d actors within the light distance"), OverlapResults.Num());
-    
+    UKismetSystemLibrary::SphereOverlapActors(
+        GetOwner(),
+        SourceLocation,
+        LightDistance,
+        TArray<TEnumAsByte<EObjectTypeQuery>>(),
+        AEnemyBase::StaticClass(),
+        TArray<AActor*>{GetOwner()},
+        OverlapActors
+    );
 
-	//IsConcentrated면 내적으로 각도 안의 적 액터만 남김
+    if (OverlapActors.IsEmpty()) return;
+
+
+    //IsConcentrated면 내적으로 각도 안의 적 액터만 남김
     //약간만 걸치는 상황까지 고려해 접선 접점위치까지 하나라도 범위 안이면 대상으로 판정
     TArray<AActor*> Candidates;
-    for (auto& Result : OverlapResults)
+    for (AActor* Target : OverlapActors)
     {
-        AActor* Target = Result.GetActor();
-        if (!Target || Target == GetOwner()) continue;
-
+        if (!Target) continue;
         if (!bIsConcentrated)
         {
             Candidates.Add(Target);
@@ -170,15 +173,15 @@ void ULightAttackComponent::CreateLightAttack(FVector SourceLocation, FVector Li
 
     if (Candidates.IsEmpty()) return;
     UE_LOG(LogTemp, Warning, TEXT("After Filtering, %d actors left in the light angle"), Candidates.Num());
-	//각 액터에 대해 중앙과 캡슐 컴포넌트 접점 2개에 대해 linetrace 진행
-	//linetrace 충돌한 액터가 대상 적 액터면 데미지 판정 진행, maxdistance까진 Damage그대로, maxDamageDistance이후로는 데미지 감쇠
+    //각 액터에 대해 중앙과 캡슐 컴포넌트 접점 2개에 대해 linetrace 진행
+    //linetrace 충돌한 액터가 대상 적 액터면 데미지 판정 진행, maxdistance까진 Damage그대로, maxDamageDistance이후로는 데미지 감쇠
     const UObject* WorldContext = GetOwner();
     TSet<AActor*> HitActors;
 
     for (AActor* Target : Candidates)
     {
         if (HitActors.Contains(Target)) continue;
-        
+
         //적까지의 벡터 계산
         FVector Center = Target->GetActorLocation();
         FVector ToTarget = (Center - SourceLocation);
@@ -212,12 +215,12 @@ void ULightAttackComponent::CreateLightAttack(FVector SourceLocation, FVector Li
                 UEngineTypes::ConvertToTraceType(ECC_Visibility),
                 false,
                 TArray<AActor*>{GetOwner()},
-                EDrawDebugTrace::Persistent,
+                EDrawDebugTrace::ForDuration,
                 HitResult,
                 true,
                 FLinearColor::Red,
                 FLinearColor::Green,
-                2.0f);
+                .02f);
 
             //적이면 데미지 계산 진행
             if (!bHit || HitResult.GetActor() == Target)
@@ -252,5 +255,24 @@ void ULightAttackComponent::TurnOffLight()
     }
     if (IsValid(SpotLightComp)) SpotLightComp->SetVisibility(false);
     if (IsValid(PointLightComp)) PointLightComp->SetVisibility(false);
+}
+
+void ULightAttackComponent::ChangeLightAngle(float Angle)
+{
+    UE_LOG(LogTemp, Warning, TEXT("Updating LightAngle"));
+    if (IsValid(SpotLightComp) && bIsConcentrated) {
+        if (LightAngle + Angle > MinAngle && LightAngle + Angle < MaxAngle) {
+            //빛 각도 조절
+            LightAngle = LightAngle + Angle;
+            SpotLightComp->SetOuterConeAngle(LightAngle / 2);
+            SpotLightComp->SetInnerConeAngle(LightAngle / 2);
+
+            //빛 세기 조절
+            LightDistance -= Angle * DistancePerAngle;
+            Damage -= Angle * DamagePerAngle;
+            SpotLightComp->SetAttenuationRadius(LightDistance);
+            SpotLightComp->SetIntensity(Damage * LightIntensityScale);
+        }
+    }
 }
 
