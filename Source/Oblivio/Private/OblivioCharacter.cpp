@@ -1,13 +1,16 @@
 ﻿#include "OblivioCharacter.h"
 #include "OblivioGameMode.h"
+#include "Weapon/WeaponBase.h"
+#include "Weapon/ThrowableWeapon.h"
+#include "Crafting/OblivioCrafting.h"
+
 #include "GameFramework/SpringArmComponent.h"
-#include "Camera/CameraComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SpotLightComponent.h"
-#include "Crafting/OblivioCrafting.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
-#include <Kismet/GameplayStatics.h>
+#include "Kismet/GameplayStatics.h"
+#include "Camera/CameraComponent.h"
 
 AOblivioCharacter::AOblivioCharacter()
 {
@@ -36,12 +39,28 @@ AOblivioCharacter::AOblivioCharacter()
 
 	GetCharacterMovement()->bOrientRotationToMovement = false;
 	bUseControllerRotationYaw = false;
+
+	WheelControlMultiplier = 3.f;
 }
 
 void AOblivioCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	UpdateFlashlightVisuals();
+
+	//시작시 손전등 장착
+	if (IsValid(FlashlightWeapon)) {
+		UE_LOG(LogTemp, Warning, TEXT("Spawning Weapon"));
+		FActorSpawnParameters Params;
+		Params.Owner = this;
+		CurrentWeapon = GetWorld()->SpawnActor<AWeaponBase>(FlashlightWeapon, GetActorTransform(), Params);
+		if (IsValid(CurrentWeapon)) {
+			UE_LOG(LogTemp, Warning, TEXT("Attaching Weapon"));
+			CurrentWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		}
+
+	}
+	FlashlightComponent->SetVisibility(false);
 }
 
 void AOblivioCharacter::Tick(float DeltaTime)
@@ -82,15 +101,19 @@ void AOblivioCharacter::Move(const FVector2D& Value)
 void AOblivioCharacter::AdjustFocus(float Value)
 {
 	if (!bCanAdjustFocus) return;
+	/*
 	CurrentFocusAlpha = FMath::Clamp(CurrentFocusAlpha + (Value * 0.1f), 0.0f, 1.0f);
-	UpdateFlashlightVisuals();
+	UpdateFlashlightVisuals();*/
+	CurrentWeapon->ChangeWeaponAngle(Value * WheelControlMultiplier);
 }
 
 void AOblivioCharacter::StartRunning() { bIsRunning = true; }
 void AOblivioCharacter::StopRunning() { bIsRunning = false; }
 
-void AOblivioCharacter::UseFlashbang()
+void AOblivioCharacter::UseFlashbang()//섬광탄 무기 투척으로 변경
 {
+	ThrowWeapon(FlashbangWeapon);
+	/*
 	if (Battery >= 50.0f)
 	{
 		Battery -= 50.0f;
@@ -107,7 +130,41 @@ void AOblivioCharacter::UseFlashbang()
 		GetWorldTimerManager().SetTimer(FlashbangTimerHandle, this, &AOblivioCharacter::FadeOutFlashbang, 0.01f, true);
 
 		// 일정 시간 동안 소리가 안 들리는 연출이나 몬스터 소멸 로직 호출
+	}*/
+}
+void AOblivioCharacter::UseFlare()
+{
+	UE_LOG(LogTemp, Warning, TEXT("Using Flare"));
+	ThrowWeapon(FlareWeapon);
+}
+void AOblivioCharacter::ThrowWeapon(TSubclassOf<AThrowableWeapon> Weapon) {
+	if (!IsValid(Weapon)) {
+		UE_LOG(LogTemp, Warning, TEXT("ThrowWeapon invalid call!"));
+		return;
 	}
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	AThrowableWeapon* ThrowingWeapon = GetWorld()->SpawnActor<AThrowableWeapon>(
+		Weapon,
+		GetActorLocation(),
+		FRotator::ZeroRotator,
+		Params);
+	FVector temp = GetAimingLocation();
+	UE_LOG(LogTemp, Warning, TEXT("Throwing Weapon %s to %f %f!"), *ThrowingWeapon->GetName(), temp.X, temp.Y);
+	ThrowingWeapon->StartThrow(GetAimingLocation());
+}
+
+FVector AOblivioCharacter::GetAimingLocation() {
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (!IsValid(PC)) return FVector::ZeroVector;
+	FHitResult HitResult;
+	PC->GetHitResultUnderCursor(
+		ECC_Visibility,
+		false,
+		HitResult
+	);
+
+	return HitResult.Location;
 }
 
 void AOblivioCharacter::FadeOutFlashbang()
@@ -218,6 +275,15 @@ void AOblivioCharacter::UpdateStatus(float DeltaTime)
 
 void AOblivioCharacter::UpdateFlashlightVisuals()
 {
+	if (!IsValid(CurrentWeapon)) return;
+
+	if (bIsFlashlightOn) {	//On
+		CurrentWeapon->UseWeapon();
+	}
+	else {	//Off
+		CurrentWeapon->StopWeapon();
+	}
+	/*
 	if (!FlashlightComponent) return;
 	FlashlightComponent->SetVisibility(bIsFlashlightOn);
 	if (bIsFlashlightOn)
@@ -226,5 +292,5 @@ void AOblivioCharacter::UpdateFlashlightVisuals()
 		float TargetRadius = FMath::Lerp(600.0f, 1800.0f, CurrentFocusAlpha);
 		FlashlightComponent->SetOuterConeAngle(TargetAngle);
 		FlashlightComponent->SetAttenuationRadius(TargetRadius);
-	}
+	}*/
 }

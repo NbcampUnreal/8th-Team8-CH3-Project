@@ -34,4 +34,8 @@ public:
 
 	virtual void UseWeapon();
 
+	virtual void StopWeapon();
+
+	virtual void ChangeWeaponAngle(float DeltaAngle);
+
 };
