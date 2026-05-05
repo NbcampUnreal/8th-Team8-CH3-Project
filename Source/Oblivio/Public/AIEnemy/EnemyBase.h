@@ -4,11 +4,12 @@
 // AEnemyBase — 모든 적 캐릭터의 공통 부모.
 //
 // FSM(의사결정): Idle → Chase / Attack → (어그로 없음 시) Investigate → Search → Patrol → Idle
-//   · ReportStimulus: 소리·트리거 등 외부 자극 위치(어그로 없을 때 우선 Investigate)
+//   · ReportStimulus: 외부 자극 위치 + EEnemyStimulusType(어그로 없을 때 Investigate, 타입은 연출·BP 분기용)
+//   · TrackLight: 콘 안 + 적 정면에 빛(기본)일 때만 스포트 위치 추적; 손전등만 꺼지면 sealed 후 마지막 점까지(어그로 시 Chase 우선)
 //   · AggroRadius: UE 단위 cm (1000 ≈ 10m). 0이면 거리 무시 항상 추격. 타겟은 GetPlayerPawn(0)
 //
 // 빛: OnLightHit으로 노출(LightExposure) 누적 → 임계값에 따라 이동속 둔화/정지, 과다 시 Die
-//   · 빛 정지 중(bIsLightFrozen)에는 Tick에서 추격·패트롤 등 미실행(연출/시퀀스와 협업 시 IsLightCrowdFrozen 참고)
+//   · 빛 정지 중(bIsLightFrozen)에는 Tick에서 추격·패트롤 등 미실행. TrackLight(손전등 추적)은 예외로 이동 허용.
 //
 // CC(기술·아이템 등): EEnemyCCState — Slow(이속 배율), Stun(경직·행동 정지). 빛 이속 배율과 곱함.
 //   · Duration<=0 이면 타이머 없이 유지 → ClearCCSlow / ClearCCStun 으로 해제
@@ -22,6 +23,7 @@
 #include "EnemyBase.generated.h"
 
 class AEnemyBase;
+class USpotLightComponent;
 
 /** 적 행동 상태(FSM). CC(경직 등)는 별도 플래그로 처리 — 상태 이름은 '의도'만 표현. */
 UENUM(BlueprintType)
@@ -30,6 +32,8 @@ enum class EEnemyAIState : uint8
 	Idle UMETA(DisplayName = "Idle"),
 	Chase UMETA(DisplayName = "Chase"),
 	Attack UMETA(DisplayName = "Attack"),
+	/** 손전등 앞면 조명 추적: 목표는 월드 점, 손전등 끔/이탈 시 마지막 점까지만 이동(Chase와 분리). */
+	TrackLight UMETA(DisplayName = "TrackLight"),
 	Patrol UMETA(DisplayName = "Patrol"),
 	Investigate UMETA(DisplayName = "Investigate"),
 	Search UMETA(DisplayName = "Search"),
@@ -45,9 +49,32 @@ enum class EEnemyCCState : uint8
 	Stunned UMETA(DisplayName = "Stunned"),
 };
 
+/** ReportStimulus에 넘기는 자극 종류. FSM 우선순위는 동일(어그로 > Investigate). */
+UENUM(BlueprintType)
+enum class EEnemyStimulusType : uint8
+{
+	Noise UMETA(DisplayName = "Noise"),
+	ThrownItem UMETA(DisplayName = "ThrownItem"),
+	Distraction UMETA(DisplayName = "Distraction"),
+	Custom UMETA(DisplayName = "Custom"),
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEnemyDiedSignature, AEnemyBase*, Enemy);
 /** 피격 시: (들어온 데미지, 남은 체력, 최대체력) — UI·히트 이펙트용 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyDamagedSignature, float, DamageAmount, float, CurrentHealth, float, MaxHealth);
+
+/** FSM 전이 시(Dead 포함). BP에서 전투·연출 테스트용. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyFSMStateChangedSignature, AEnemyBase*, Enemy, EEnemyAIState, OldState, EEnemyAIState, NewState);
+/** 근접 공격이 실제로 나갔을 때(범위·대상 유효 후 ApplyDamage 직전). DamageAmount는 이번 히트에 쓰인 값. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyAttackCommittedSignature, AEnemyBase*, Enemy, AActor*, Target, float, DamageAmount);
+/** ReportStimulus가 Investigate 큐에 반영됐을 때(어그로 있으면 호출 안 됨). */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyStimulusReportedSignature, AEnemyBase*, Enemy, FVector, StimulusLocation, EEnemyStimulusType, StimulusType);
+/** TrackLight 진입 true / 이탈 false. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnemyTrackLightPhaseSignature, AEnemyBase*, Enemy, bool, bEnteredTrackLight);
+/** SetTargetActor 호출 시마다(전투 타겟 바인딩 테스트용). */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnemyTargetChangedSignature, AEnemyBase*, Enemy, AActor*, NewTarget);
+/** OnLightHit 진입 시(노출·둔화 연출·테스트용). */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyLightHitSignature, AEnemyBase*, Enemy, float, Intensity, float, Duration);
 
 UCLASS(Blueprintable)
 class OBLIVIO_API AEnemyBase : public ACharacter
@@ -97,9 +124,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Target")
 	void SetTargetActor(AActor* NewTarget);
 
-	/** 소리·트리거 등 자극 위치. 어그로 대상이 없을 때 Investigate 우선. */
-	UFUNCTION(BlueprintCallable, Category = "Enemy|FSM")
-	void ReportStimulus(FVector WorldLocation);
+	/**
+	 * 자극 위치 보고. 어그로가 없을 때만 Investigate 큐에 넣음(플레이어 추적보다 우선순위 낮음은 기존과 동일).
+	 * StimulusType은 애니·VFX·BP 분기용.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|FSM", meta = (AdvancedDisplay = "StimulusType"))
+	void ReportStimulus(FVector WorldLocation, EEnemyStimulusType StimulusType = EEnemyStimulusType::Noise);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|FSM")
+	EEnemyStimulusType GetLastReportedStimulusType() const { return LastReportedStimulusType; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|Stats")
 	float GetCurrentHealthForUI() const { return CurrentHealth; }
@@ -122,6 +155,24 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events")
 	FEnemyDamagedSignature OnEnemyDamaged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events|Combat")
+	FEnemyFSMStateChangedSignature OnEnemyFSMStateChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events|Combat")
+	FEnemyAttackCommittedSignature OnEnemyAttackCommitted;
+
+	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events|Combat")
+	FEnemyStimulusReportedSignature OnEnemyStimulusReported;
+
+	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events|Combat")
+	FEnemyTrackLightPhaseSignature OnEnemyTrackLightPhase;
+
+	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events|Combat")
+	FEnemyTargetChangedSignature OnEnemyTargetChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events|Combat")
+	FEnemyLightHitSignature OnEnemyLightHit;
 
 protected:
 	virtual void BeginPlay() override;
@@ -231,12 +282,46 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Light", meta = (ClampMin = "0.0"))
 	float LightExposureDecayPerSecond = 0.35f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
-	float CorpseLifeSpan = 3.0f;
+	/** true면 플레이어 손전등(앞면+콘) 조건일 때 TrackLight FSM 사용. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Light|Track")
+	bool bEnableLightTracking = true;
+
+	/** 손전등 콘·앞면 판정에 쓰는 몸 높이 오프셋(cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Light|Track", meta = (ClampMin = "0.0"))
+	float LightTrackConeTestZ = 40.0f;
+
+	/** 콘 판정 시 AttenuationRadius에 더하는 여유(cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Light|Track", meta = (ClampMin = "0.0"))
+	float LightTrackConeRadiusSlack = 32.0f;
+
+	/**
+	 * true면 적 정면에 손전등이 올 때만 추적(적 Forward · (적→스포트) Dot ≥ LightTrackFrontFaceMinDot).
+	 * false면 콘 안이면 등·옆에서 비춰도 추적(탑다운 등).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Light|Track")
+	bool bLightTrackRequireFrontFace = true;
+
+	/** 정면 판정: 1에 가까울수록 좁은 정면(직면). 0.25 ≈ 약 75° 이내. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Light|Track", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	float LightTrackFrontFaceMinDot = 0.35f;
+
+	/** TrackLight MoveTo 도착 반경(cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Light|Track", meta = (ClampMin = "1.0"))
+	float LightTrackAcceptanceRadius = 72.0f;
+
+	/**
+	 * 콘/정면 판정이 일시적으로 빠질 때 즉시 Idle로 떨어지지 않도록 유지하는 시간(초).
+	 * 0이면 기존 동작과 동일(빠지면 즉시 Idle). 0.3~0.6 권장.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Light|Track", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float LightTrackLossGracePeriod = 0.45f;
 
 	/** 리얼·루프 등 적 오디오 총괄 배율. 파생 클래스는 ApplyEnemySoundVolumes에서 컴포넌트에 반영. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Audio", meta = (ClampMin = "0.0", ClampMax = "4.0"))
 	float EnemySoundVolumeMultiplier = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
+	float CorpseLifeSpan = 3.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|State")
 	EEnemyAIState EnemyState = EEnemyAIState::Idle;
@@ -259,6 +344,7 @@ protected:
 	virtual void UpdateInvestigate(float DeltaSeconds);
 	virtual void UpdateSearch(float DeltaSeconds);
 	virtual void UpdateIdle(float DeltaSeconds);
+	virtual void UpdateTrackLight(float DeltaSeconds);
 	virtual void Die();
 
 	void SetEnemyState(EEnemyAIState NewState);
@@ -305,10 +391,30 @@ private:
 	bool bHasPendingInvestigate = false;
 	FVector PendingInvestigateLocation = FVector::ZeroVector;
 	float InvestigateTimerRemaining = 0.0f;
+	/** 마지막으로 큐에 올라간 ReportStimulus의 타입(어그로로 무시된 보고는 갱신 안 함). */
+	EEnemyStimulusType LastReportedStimulusType = EEnemyStimulusType::Noise;
 
 	float SearchTimeRemaining = 0.0f;
 	FVector SearchAnchor = FVector::ZeroVector;
 	float SearchRetargetCooldown = 0.0f;
 
 	float IdleWanderRetargetCooldown = 0.0f;
+
+	bool bLightTrackGoalValid = false;
+	bool bLightTrackSealed = false;
+	FVector LightTrackGoalWorld = FVector::ZeroVector;
+	/** 손전등 콘/정면 판정이 잠깐 실패해도 LastGoal까지 잠시 더 따라가게 해주는 잔여시간. */
+	float LightTrackGraceRemaining = 0.0f;
+
+	void ClearLightTrackState();
+	bool TryComputeFlashlightTrackGoal(FVector& OutGoal);
+
+	/** 플레이어(또는 타겟) 손전등 USpotLight. 없으면 nullptr. */
+	USpotLightComponent* ResolveFlashlightSpotForTracking() const;
+
+	/** 손전등 꺼짐·배터리 등으로 “추적 불가(마지막 점까지)”일 때만 true — 콘 밖은 false. */
+	bool IsFlashlightTrackSourceOff(USpotLightComponent* Spot) const;
+
+	/** bLightTrackRequireFrontFace일 때: 적 Forward와 (적→LightWorld) Dot 검사. 꺼져 있으면 항상 true. */
+	bool PassesLightTrackFrontFaceTest(const FVector& LightWorldLocation) const;
 };

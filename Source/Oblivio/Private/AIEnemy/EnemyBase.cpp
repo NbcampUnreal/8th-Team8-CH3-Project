@@ -9,6 +9,9 @@
 #include "NavigationSystem.h"
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
+#include "OblivioCharacter.h"
+#include "Components/SpotLightComponent.h"
+#include "Engine/World.h"
 
 // =============================================================================
 // AEnemyBase 구현 요약
@@ -90,7 +93,9 @@ void AEnemyBase::Tick(float DeltaSeconds)
 
 	DrawAggroDebug();
 
-	if (bIsLightFrozen || bCCStunned)
+	// 빛 정지(bIsLightFrozen)는 추격·패트롤 등을 막되, TrackLight는 손전등 방향으로 이동해야 하므로 예외.
+	// 노출 기반 이속 0(LightMult)도 RefreshWalkSpeedFromSources에서 TrackLight일 때 무시.
+	if (bCCStunned || (bIsLightFrozen && EnemyState != EEnemyAIState::TrackLight))
 	{
 		return;
 	}
@@ -114,6 +119,9 @@ void AEnemyBase::Tick(float DeltaSeconds)
 		break;
 	case EEnemyAIState::Search:
 		UpdateSearch(DeltaSeconds);
+		break;
+	case EEnemyAIState::TrackLight:
+		UpdateTrackLight(DeltaSeconds);
 		break;
 	case EEnemyAIState::Dead:
 	default:
@@ -276,6 +284,7 @@ void AEnemyBase::OnLightHit(float Intensity, float Duration)
 
 	const float ClampedDuration = FMath::Max(0.0f, Duration);
 	const float ClampedIntensity = FMath::Clamp(Intensity, 0.0f, 1.0f);
+	OnEnemyLightHit.Broadcast(this, ClampedIntensity, ClampedDuration);
 	LightExposure = FMath::Max(0.0f, LightExposure + ClampedIntensity * ClampedDuration);
 
 	if (LightDeathExposureThreshold > 0.0f && LightExposure >= LightDeathExposureThreshold)
@@ -325,11 +334,12 @@ void AEnemyBase::OnFlashbangHit(float DamageAmount)
 void AEnemyBase::SetTargetActor(AActor* NewTarget)
 {
 	TargetActor = NewTarget;
+	OnEnemyTargetChanged.Broadcast(this, NewTarget);
 	UpdateState();
 }
 
-// 어그로 대상이 없을 때만: 소음 등 위치로 Investigate 큐 적재
-void AEnemyBase::ReportStimulus(FVector WorldLocation)
+// 어그로 대상이 없을 때만: 자극 위치·타입으로 Investigate 큐 적재
+void AEnemyBase::ReportStimulus(FVector WorldLocation, EEnemyStimulusType StimulusType)
 {
 	if (!IsAlive())
 	{
@@ -341,8 +351,10 @@ void AEnemyBase::ReportStimulus(FVector WorldLocation)
 	}
 
 	PendingInvestigateLocation = WorldLocation;
+	LastReportedStimulusType = StimulusType;
 	bHasPendingInvestigate = true;
 	InvestigateTimerRemaining = InvestigateStimulusTimeout;
+	OnEnemyStimulusReported.Broadcast(this, WorldLocation, StimulusType);
 	UpdateState();
 }
 
@@ -373,7 +385,7 @@ bool AEnemyBase::HasValidAggroTarget() const
 	return DistSq <= FMath::Square(AggroRadius);
 }
 
-// 어그로 → Chase/Attack, 없으면 방금 놓침이면 Search 타이머, 그다음 자극/탐색/패트롤/Idle
+// 어그로 → Chase/Attack, 없으면 TrackLight(옵션) → 방금 놓침 Search → 자극 Investigate → …
 void AEnemyBase::UpdateState()
 {
 	if (!IsAlive())
@@ -386,12 +398,18 @@ void AEnemyBase::UpdateState()
 
 	if (bAggro)
 	{
+		ClearLightTrackState();
 		LastKnownTargetLocation = TargetActor->GetActorLocation();
 		SearchTimeRemaining = 0.0f;
 		SearchRetargetCooldown = 0.0f;
 		bHasPendingInvestigate = false;
 		SetEnemyState(IsTargetInAttackRange() ? EEnemyAIState::Attack : EEnemyAIState::Chase);
 		bHadAggroLastTick = true;
+		return;
+	}
+
+	if (EnemyState == EEnemyAIState::TrackLight)
+	{
 		return;
 	}
 
@@ -402,6 +420,19 @@ void AEnemyBase::UpdateState()
 		SearchRetargetCooldown = 0.0f;
 	}
 	bHadAggroLastTick = false;
+
+	if (bEnableLightTracking)
+	{
+		FVector Goal;
+		if (TryComputeFlashlightTrackGoal(Goal))
+		{
+			LightTrackGoalWorld = Goal;
+			bLightTrackGoalValid = true;
+			bLightTrackSealed = false;
+			SetEnemyState(EEnemyAIState::TrackLight);
+			return;
+		}
+	}
 
 	if (bHasPendingInvestigate)
 	{
@@ -422,6 +453,250 @@ void AEnemyBase::UpdateState()
 	}
 
 	SetEnemyState(EEnemyAIState::Idle);
+}
+
+void AEnemyBase::ClearLightTrackState()
+{
+	bLightTrackGoalValid = false;
+	bLightTrackSealed = false;
+	LightTrackGoalWorld = FVector::ZeroVector;
+	LightTrackGraceRemaining = 0.0f;
+}
+
+USpotLightComponent* AEnemyBase::ResolveFlashlightSpotForTracking() const
+{
+	if (!IsValid(TargetActor))
+	{
+		return nullptr;
+	}
+	if (AOblivioCharacter* const Oc = Cast<AOblivioCharacter>(TargetActor))
+	{
+		if (Oc->FlashlightComponent)
+		{
+			return Oc->FlashlightComponent;
+		}
+	}
+	return TargetActor->FindComponentByClass<USpotLightComponent>();
+}
+
+bool AEnemyBase::IsFlashlightTrackSourceOff(USpotLightComponent* Spot) const
+{
+	if (!Spot)
+	{
+		return true;
+	}
+	if (const AOblivioCharacter* const Player = Cast<AOblivioCharacter>(TargetActor))
+	{
+		return !Player->bIsFlashlightOn || Player->Battery <= 0.0f;
+	}
+	return !Spot->IsVisible() || Spot->Intensity <= KINDA_SMALL_NUMBER;
+}
+
+bool AEnemyBase::PassesLightTrackFrontFaceTest(const FVector& LightWorldLocation) const
+{
+	if (!bLightTrackRequireFrontFace)
+	{
+		return true;
+	}
+	const FVector ToLight = (LightWorldLocation - GetActorLocation()).GetSafeNormal();
+	if (ToLight.IsNearlyZero())
+	{
+		return false;
+	}
+	return FVector::DotProduct(GetActorForwardVector(), ToLight) >= LightTrackFrontFaceMinDot;
+}
+
+bool AEnemyBase::TryComputeFlashlightTrackGoal(FVector& OutGoal)
+{
+	USpotLightComponent* const Spot = ResolveFlashlightSpotForTracking();
+	if (!Spot)
+	{
+		return false;
+	}
+
+	if (IsFlashlightTrackSourceOff(Spot))
+	{
+		return false;
+	}
+
+	const FVector TestPoint = GetActorLocation() + FVector(0.0f, 0.0f, LightTrackConeTestZ);
+	const FVector Origin = Spot->GetComponentLocation();
+	FVector Dir = Spot->GetForwardVector().GetSafeNormal();
+	const FVector ToPoint = TestPoint - Origin;
+	const float Dist = ToPoint.Size();
+
+	// 손전등에 거의 붙은 경우에도 목표는 유지(이전엔 실패 → seal 로 한 번만 추적되던 원인).
+	const FVector RawGoal = Origin;
+	if (Dist < KINDA_SMALL_NUMBER)
+	{
+		if (!PassesLightTrackFrontFaceTest(Origin))
+		{
+			return false;
+		}
+		UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+		if (!NavSys)
+		{
+			OutGoal = RawGoal;
+			return true;
+		}
+		FNavLocation Projected;
+		if (NavSys->ProjectPointToNavigation(RawGoal, Projected, FVector(400.0f, 400.0f, 500.0f)))
+		{
+			OutGoal = Projected.Location;
+		}
+		else
+		{
+			OutGoal = RawGoal;
+		}
+		return true;
+	}
+
+	const float MaxDist = Spot->AttenuationRadius + LightTrackConeRadiusSlack;
+	if (Dist > MaxDist)
+	{
+		return false;
+	}
+
+	const FVector ToNorm = ToPoint / Dist;
+	const float HalfOuterDeg = Spot->OuterConeAngle * 0.5f;
+	const float CosCone = FMath::Cos(FMath::DegreesToRadians(HalfOuterDeg));
+	// 손전등은 단방향 — Dir과 같은 반구가 아니거나(콘 뒤쪽), 콘 각도를 벗어나면 콘 밖.
+	// 이전엔 Dir = -Dir 로 뒤집어 검사하느라 ‘플레이어 등 뒤’의 적이 추적 진입하는 버그 발생.
+	if (FVector::DotProduct(Dir, ToNorm) < CosCone - KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	if (!PassesLightTrackFrontFaceTest(Origin))
+	{
+		return false;
+	}
+
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	if (!NavSys)
+	{
+		OutGoal = RawGoal;
+		return true;
+	}
+
+	FNavLocation Projected;
+	if (NavSys->ProjectPointToNavigation(RawGoal, Projected, FVector(400.0f, 400.0f, 500.0f)))
+	{
+		OutGoal = Projected.Location;
+	}
+	else
+	{
+		OutGoal = RawGoal;
+	}
+	return true;
+}
+
+void AEnemyBase::UpdateTrackLight(float DeltaSeconds)
+{
+	if (!bEnableLightTracking)
+	{
+		ClearLightTrackState();
+		SetEnemyState(EEnemyAIState::Idle);
+		UpdateState();
+		return;
+	}
+
+	AAIController* const AI = Cast<AAIController>(GetController());
+	if (!AI)
+	{
+		return;
+	}
+
+	if (HasValidAggroTarget())
+	{
+		ClearLightTrackState();
+		UpdateState();
+		return;
+	}
+
+	USpotLightComponent* const Spot = ResolveFlashlightSpotForTracking();
+
+	// 콘·정면·거리 모두 만족할 때만 살아 있는 추적. 성공 시에만 MoveTo(매 틱 목표 갱신).
+	FVector NewGoal;
+	if (TryComputeFlashlightTrackGoal(NewGoal))
+	{
+		bLightTrackSealed = false;
+		LightTrackGoalWorld = NewGoal;
+		bLightTrackGoalValid = true;
+		LightTrackGraceRemaining = LightTrackLossGracePeriod;
+		const EPathFollowingRequestResult::Type MoveResult = AI->MoveToLocation(LightTrackGoalWorld, LightTrackAcceptanceRadius);
+		if (MoveResult == EPathFollowingRequestResult::Failed)
+		{
+			UE_LOG(LogTemp, Verbose, TEXT("%s TrackLight MoveToLocation failed"), *GetNameSafe(this));
+		}
+		return;
+	}
+
+	// TryCompute 실패
+	if (IsFlashlightTrackSourceOff(Spot))
+	{
+		// 손전등 꺼짐·배터리 등: 마지막으로 “유효했던” 목표까지만 밀봉 추적
+		if (!bLightTrackSealed)
+		{
+			bLightTrackSealed = true;
+		}
+		if (!bLightTrackGoalValid)
+		{
+			ClearLightTrackState();
+			StopEnemyMovement();
+			SetEnemyState(EEnemyAIState::Idle);
+			UpdateState();
+			return;
+		}
+
+		const float DistSq = FVector::DistSquared(GetActorLocation(), LightTrackGoalWorld);
+		if (DistSq <= FMath::Square(LightTrackAcceptanceRadius))
+		{
+			ClearLightTrackState();
+			StopEnemyMovement();
+			SetEnemyState(EEnemyAIState::Idle);
+			UpdateState();
+			return;
+		}
+
+		const EPathFollowingRequestResult::Type MoveResult = AI->MoveToLocation(LightTrackGoalWorld, LightTrackAcceptanceRadius);
+		if (MoveResult == EPathFollowingRequestResult::Failed)
+		{
+			UE_LOG(LogTemp, Verbose, TEXT("%s TrackLight sealed repath failed"), *GetNameSafe(this));
+		}
+		return;
+	}
+
+	// 손전등은 켜져 있는데 지금 한 프레임만 콘/정면 조건이 빠진 상황 —
+	// 즉시 Idle로 떨어지면 손전등이 켜져 있는데 추격이 끊기는 깜박임이 발생하므로 잠시 잔여 시간만큼 LastGoal 추적 유지.
+	if (LightTrackGraceRemaining > 0.0f && bLightTrackGoalValid)
+	{
+		LightTrackGraceRemaining = FMath::Max(0.0f, LightTrackGraceRemaining - DeltaSeconds);
+
+		const float DistSq = FVector::DistSquared(GetActorLocation(), LightTrackGoalWorld);
+		if (DistSq <= FMath::Square(LightTrackAcceptanceRadius))
+		{
+			ClearLightTrackState();
+			StopEnemyMovement();
+			SetEnemyState(EEnemyAIState::Idle);
+			UpdateState();
+			return;
+		}
+
+		const EPathFollowingRequestResult::Type MoveResult = AI->MoveToLocation(LightTrackGoalWorld, LightTrackAcceptanceRadius);
+		if (MoveResult == EPathFollowingRequestResult::Failed)
+		{
+			UE_LOG(LogTemp, Verbose, TEXT("%s TrackLight grace repath failed"), *GetNameSafe(this));
+		}
+		return;
+	}
+
+	// Grace 소진: 진짜로 추적 해제
+	bLightTrackSealed = false;
+	StopEnemyMovement();
+	ClearLightTrackState();
+	SetEnemyState(EEnemyAIState::Idle);
+	UpdateState();
 }
 
 // NavMesh MoveToActor로 플레이어 접근
@@ -468,6 +743,7 @@ void AEnemyBase::PerformAttack_Implementation(AActor* Target)
 		return;
 	}
 
+	OnEnemyAttackCommitted.Broadcast(this, Target, AttackDamage);
 	UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
 }
 
@@ -638,6 +914,7 @@ void AEnemyBase::Die()
 		return;
 	}
 
+	ClearLightTrackState();
 	CurrentHealth = 0.0f;
 	SetEnemyState(EEnemyAIState::Dead);
 	StopEnemyMovement();
@@ -656,7 +933,6 @@ void AEnemyBase::Die()
 
 	SetLifeSpan(FMath::Max(0.0f, CorpseLifeSpan));
 
-	//추가: 인스턴스에서 킬카운트를 기록
 	if (AOblivioGameMode* GM = Cast<AOblivioGameMode>(UGameplayStatics::GetGameMode(GetWorld())))
 	{
 		GM->AddMonsterKill();
@@ -678,6 +954,15 @@ void AEnemyBase::SetEnemyState(EEnemyAIState NewState)
 		IdleWanderRetargetCooldown = FMath::FRandRange(0.3f, 1.5f);
 	}
 	NotifyEnemyStateChanged(OldState, NewState);
+	OnEnemyFSMStateChanged.Broadcast(this, OldState, NewState);
+	if (NewState == EEnemyAIState::TrackLight && OldState != EEnemyAIState::TrackLight)
+	{
+		OnEnemyTrackLightPhase.Broadcast(this, true);
+	}
+	else if (OldState == EEnemyAIState::TrackLight && NewState != EEnemyAIState::TrackLight)
+	{
+		OnEnemyTrackLightPhase.Broadcast(this, false);
+	}
 	UE_LOG(LogTemp, Verbose, TEXT("%s state changed to %s"), *GetNameSafe(this), *UEnum::GetValueAsString(EnemyState));
 }
 
@@ -733,14 +1018,19 @@ void AEnemyBase::RefreshWalkSpeedFromSources()
 		return;
 	}
 
-	const bool bImmobilized = bIsLightFrozen || bCCStunned;
+	const bool bLightFreezeBlocksMove = bIsLightFrozen && EnemyState != EEnemyAIState::TrackLight;
+	const bool bImmobilized = bCCStunned || bLightFreezeBlocksMove;
 	if (bImmobilized)
 	{
 		GetCharacterMovement()->MaxWalkSpeed = 0.0f;
 		return;
 	}
 
-	const float LightMult = ComputeLightSpeedMultiplier();
+	float LightMult = ComputeLightSpeedMultiplier();
+	if (EnemyState == EEnemyAIState::TrackLight)
+	{
+		LightMult = 1.0f;
+	}
 	const float CCSlowMult = bCCSlowActive ? CCSlowSpeedMultiplier : 1.0f;
 	const float BaseSpeed = GetLocomotionBaseSpeed();
 	GetCharacterMovement()->MaxWalkSpeed = BaseSpeed * LightMult * CCSlowMult;
@@ -750,7 +1040,8 @@ float AEnemyBase::GetLocomotionBaseSpeed() const
 {
 	const bool bCombatLocomotion =
 		EnemyState == EEnemyAIState::Chase ||
-		EnemyState == EEnemyAIState::Attack;
+		EnemyState == EEnemyAIState::Attack ||
+		EnemyState == EEnemyAIState::TrackLight;
 	if (bCombatLocomotion && ChaseMoveSpeed > KINDA_SMALL_NUMBER)
 	{
 		return ChaseMoveSpeed;
@@ -773,7 +1064,7 @@ void AEnemyBase::DrawAggroDebug()
 		FindDefaultTarget();
 	}
 
-	const bool bPausedAi = bIsLightFrozen || bCCStunned;
+	const bool bPausedAi = bCCStunned || (bIsLightFrozen && EnemyState != EEnemyAIState::TrackLight);
 	const bool bInRange = HasValidAggroTarget();
 
 	FColor Color;
