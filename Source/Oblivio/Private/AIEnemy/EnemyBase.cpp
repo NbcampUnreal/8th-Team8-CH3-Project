@@ -249,7 +249,7 @@ void AEnemyBase::OnCCStunExpired()
 	}
 }
 
-// 체력 차감·피격 델리게이트·0이하면 Die. 반환값은 실제 적용된 데미지
+// 피격 판단만 수행. 실제 체력 차감·상태이상·사망 처리는 전투 시스템에서 담당.
 float AEnemyBase::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	const float AppliedDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
@@ -259,22 +259,15 @@ float AEnemyBase::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent
 		return 0.0f;
 	}
 
-	CurrentHealth = FMath::Clamp(CurrentHealth - AppliedDamage, 0.0f, MaxHealth);
-
-	UE_LOG(LogTemp, Verbose, TEXT("%s took %.1f damage. Health: %.1f / %.1f"),
-		*GetNameSafe(this), AppliedDamage, CurrentHealth, MaxHealth);
+	UE_LOG(LogTemp, Verbose, TEXT("%s received hit decision %.1f. Combat system owns the result."),
+		*GetNameSafe(this), AppliedDamage);
 
 	OnEnemyDamaged.Broadcast(AppliedDamage, CurrentHealth, MaxHealth);
-
-	if (CurrentHealth <= 0.0f)
-	{
-		Die();
-	}
 
 	return AppliedDamage;
 }
 
-// 손전등 등: 노출 누적 → 사망 임계/둔화/정지 → 타이머로 일정 시간 후 이동 복구
+// 손전등 피격 판단만 수행. 빛 피해·둔화·정지·사망 처리는 전투 시스템에서 담당.
 void AEnemyBase::OnLightHit(float Intensity, float Duration)
 {
 	if (!IsAlive())
@@ -285,40 +278,9 @@ void AEnemyBase::OnLightHit(float Intensity, float Duration)
 	const float ClampedDuration = FMath::Max(0.0f, Duration);
 	const float ClampedIntensity = FMath::Clamp(Intensity, 0.0f, 1.0f);
 	OnEnemyLightHit.Broadcast(this, ClampedIntensity, ClampedDuration);
-	LightExposure = FMath::Max(0.0f, LightExposure + ClampedIntensity * ClampedDuration);
-
-	if (LightDeathExposureThreshold > 0.0f && LightExposure >= LightDeathExposureThreshold)
-	{
-		Die();
-		return;
-	}
-
-	float SpeedMultiplier = 1.0f;
-	if (LightExposure >= LightFreezeExposureThreshold)
-	{
-		SpeedMultiplier = LightFreezeSpeedMultiplier;
-	}
-	else if (LightExposure >= LightSlowExposureThreshold)
-	{
-		SpeedMultiplier = LightSlowSpeedMultiplier;
-	}
-
-	bIsLightFrozen = ClampedDuration > 0.0f && SpeedMultiplier <= KINDA_SMALL_NUMBER;
-	RefreshWalkSpeedFromSources();
-
-	if (bIsLightFrozen)
-	{
-		StopEnemyMovement();
-	}
-
-	if (ClampedDuration > 0.0f)
-	{
-		GetWorldTimerManager().ClearTimer(LightFreezeTimerHandle);
-		GetWorldTimerManager().SetTimer(LightFreezeTimerHandle, this, &AEnemyBase::RestoreMovementAfterLight, ClampedDuration, false);
-	}
 }
 
-// 플래시뱅: 인자 없으면 DefaultFlashbangDamage로 일반 TakeDamage 경로 태움
+// 플래시뱅 피격 판단만 수행. 실제 결과는 전투 시스템에서 담당.
 void AEnemyBase::OnFlashbangHit(float DamageAmount)
 {
 	if (!IsAlive())
@@ -327,7 +289,7 @@ void AEnemyBase::OnFlashbangHit(float DamageAmount)
 	}
 
 	const float DamageToApply = DamageAmount > 0.0f ? DamageAmount : DefaultFlashbangDamage;
-	UGameplayStatics::ApplyDamage(this, DamageToApply, nullptr, nullptr, UDamageType::StaticClass());
+	OnEnemyDamaged.Broadcast(DamageToApply, CurrentHealth, MaxHealth);
 }
 
 // 수동으로 추적 대상 교체 후 FSM 즉시 갱신
@@ -735,7 +697,7 @@ void AEnemyBase::UpdateAttack()
 	PerformAttack(TargetActor);
 }
 
-// 기본 근접: 범위 내일 때만 대상에게 ApplyDamage
+// 기본 근접: 범위 내 공격 가능 판단만 브로드캐스트. 실제 공격 방식은 전투 시스템/BP에서 담당.
 void AEnemyBase::PerformAttack_Implementation(AActor* Target)
 {
 	if (!IsValid(Target) || !IsTargetInAttackRange())
@@ -744,7 +706,6 @@ void AEnemyBase::PerformAttack_Implementation(AActor* Target)
 	}
 
 	OnEnemyAttackCommitted.Broadcast(this, Target, AttackDamage);
-	UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
 }
 
 // PatrolPoints 순서대로 도착 반경 안 들어오면 다음 지점
