@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
@@ -20,7 +20,7 @@ protected:
 	virtual void Tick(float DeltaTime) override;
 
 public:
-	// 컨트롤러
+	// ????
 	void Move(const FVector2D& Value);
 	void StartRunning();
 	void StopRunning();
@@ -32,7 +32,7 @@ public:
 	void PlaceObstacle();
 	void Interact();
 
-	//컴포넌트
+	//????
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	class USpringArmComponent* CameraBoom;
 
@@ -45,7 +45,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	class  UOblivioCrafting* CraftingComponent;
 
-	//생존 스탯 및 상태 변수
+	//?? ?? ? ?? ??
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
 	float Health = 100.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
@@ -84,7 +84,7 @@ public:
 	bool bIsInventoryOpen = false;
 	bool bIsCraftingOpen = false;
 	float CurrentFocusAlpha = 0.5f;
-	//추가: 죽었는지 체크
+	//??: ???? ??
 	bool bIsDead = false;
 
 	void UpdateStatus(float DeltaTime);
