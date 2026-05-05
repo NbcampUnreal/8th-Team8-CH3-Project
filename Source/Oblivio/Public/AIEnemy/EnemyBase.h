@@ -8,8 +8,9 @@
 //   · TrackLight: 콘 안 + 적 정면에 빛(기본)일 때만 스포트 위치 추적; 손전등만 꺼지면 sealed 후 마지막 점까지(어그로 시 Chase 우선)
 //   · AggroRadius: UE 단위 cm (1000 ≈ 10m). 0이면 거리 무시 항상 추격. 타겟은 GetPlayerPawn(0)
 //
-// 빛: OnLightHit으로 노출(LightExposure) 누적 → 임계값에 따라 이동속 둔화/정지, 과다 시 Die
-//   · 빛 정지 중(bIsLightFrozen)에는 Tick에서 추격·패트롤 등 미실행. TrackLight(손전등 추적)은 예외로 이동 허용.
+// 전투 위임: EnemyBase는 공격 가능/피격 여부를 판단해 이벤트만 발행.
+//   · 실제 피해량, 상태이상, 사망, 연출은 전투 시스템 또는 BP PerformAttack/델리게이트에서 처리.
+//   · OnLightHit/OnFlashbangHit도 빛 피격 판단 이벤트만 발행하고 직접 둔화·정지·사망시키지 않음.
 //
 // CC(기술·아이템 등): EEnemyCCState — Slow(이속 배율), Stun(경직·행동 정지). 빛 이속 배율과 곱함.
 //   · Duration<=0 이면 타이머 없이 유지 → ClearCCSlow / ClearCCStun 으로 해제
@@ -60,12 +61,12 @@ enum class EEnemyStimulusType : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEnemyDiedSignature, AEnemyBase*, Enemy);
-/** 피격 시: (들어온 데미지, 남은 체력, 최대체력) — UI·히트 이펙트용 */
+/** 피격 판단 시: (들어온 데미지, 현재 체력, 최대체력). 실제 체력/상태/사망 처리는 전투 시스템에서 담당. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyDamagedSignature, float, DamageAmount, float, CurrentHealth, float, MaxHealth);
 
 /** FSM 전이 시(Dead 포함). BP에서 전투·연출 테스트용. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyFSMStateChangedSignature, AEnemyBase*, Enemy, EEnemyAIState, OldState, EEnemyAIState, NewState);
-/** 근접 공격이 실제로 나갔을 때(범위·대상 유효 후 ApplyDamage 직전). DamageAmount는 이번 히트에 쓰인 값. */
+/** 근접 공격 가능 판단이 성립했을 때. 실제 피해/상태/연출 처리는 전투 시스템에서 담당. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyAttackCommittedSignature, AEnemyBase*, Enemy, AActor*, Target, float, DamageAmount);
 /** ReportStimulus가 Investigate 큐에 반영됐을 때(어그로 있으면 호출 안 됨). */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyStimulusReportedSignature, AEnemyBase*, Enemy, FVector, StimulusLocation, EEnemyStimulusType, StimulusType);
@@ -86,7 +87,7 @@ public:
 
 	// 매 틱: 빛 노출 감쇠 → 타겟 재탐색 → FSM 갱신 → 현재 상태 실행(이동/공격/패트롤 등)
 	virtual void Tick(float DeltaSeconds) override;
-	// 엔진 damage 파이프라인. 체력 반영 후 OnEnemyDamaged, 0 이하면 Die
+	// 엔진 damage 파이프라인 진입 판단. 실제 체력 반영/사망 처리는 전투 시스템에 위임.
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy|State")
@@ -329,7 +330,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Target")
 	TObjectPtr<AActor> TargetActor;
 
-	/** 근접 판정 시 BP에서 오버라이드 가능. 기본은 ApplyDamage만 수행 */
+	/** 근접 공격 판단 시 BP/C++에서 실제 공격 방식을 구현. 기본은 OnEnemyAttackCommitted 브로드캐스트만 수행. */
 	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Combat")
 	void PerformAttack(AActor* Target);
 	virtual void PerformAttack_Implementation(AActor* Target);
