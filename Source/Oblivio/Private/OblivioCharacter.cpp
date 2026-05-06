@@ -203,6 +203,34 @@ void AOblivioCharacter::ToggleFlashlight()
 	}
 }
 
+void AOblivioCharacter::ReloadBattery()
+{
+	if (bIsDead) return;
+
+	//인벤토리/배터리 아이템 생길 시 조건추가.
+	bool bHasBatteryItem = true; // 현재 있다고 가정
+
+	if (bHasBatteryItem)
+	{
+		if (Battery >= 100.0f)
+		{
+			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("Battery is already full."));
+			return;
+		}
+
+		// 충전 로직
+		Battery = 100.0f;
+
+		if (!bIsFlashlightOn)
+		{
+			bIsFlashlightOn = true;
+			UpdateFlashlightVisuals();
+		}
+
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, TEXT("Flashlight Recharged!"));
+	}
+}
+
 void AOblivioCharacter::ToggleInventory()
 {
 	bIsInventoryOpen = !bIsInventoryOpen;
