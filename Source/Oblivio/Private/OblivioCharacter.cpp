@@ -3,6 +3,8 @@
 #include "Weapon/WeaponBase.h"
 #include "Weapon/ThrowableWeapon.h"
 #include "Crafting/OblivioCrafting.h"
+#include "OblivioComponents/SoundPropagationComponent.h"
+#include "OblivioComponents/PlayerCombatComponent.h"
 
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -36,6 +38,10 @@ AOblivioCharacter::AOblivioCharacter()
 	FlashbangLight->SetAttenuationRadius(800.0f);
 
 	CraftingComponent = CreateDefaultSubobject<UOblivioCrafting>(TEXT("CraftingComponent"));
+
+	SoundPropagationComp = CreateDefaultSubobject<USoundPropagationComponent>(TEXT("SoundPropagationComp"));
+
+	CombatComp = CreateDefaultSubobject<UPlayerCombatComponent>(TEXT("CombatComp"));
 
 	GetCharacterMovement()->bOrientRotationToMovement = false;
 	bUseControllerRotationYaw = false;
@@ -136,6 +142,7 @@ void AOblivioCharacter::UseFlare()
 {
 	UE_LOG(LogTemp, Warning, TEXT("Using Flare"));
 	ThrowWeapon(FlareWeapon);
+	SoundPropagationComp->PropagateSound();
 }
 void AOblivioCharacter::ThrowWeapon(TSubclassOf<AThrowableWeapon> Weapon) {
 	if (!IsValid(Weapon)) {
@@ -351,4 +358,48 @@ void AOblivioCharacter::UpdateFlashlightVisuals()
 		FlashlightComponent->SetOuterConeAngle(TargetAngle);
 		FlashlightComponent->SetAttenuationRadius(TargetRadius);
 	}*/
+}
+
+//체력 적용
+void AOblivioCharacter::ApplyHealth(float Damage)
+{
+	UE_LOG(LogTemp, Warning, TEXT("%f damage to the player!"), Damage);
+	CurrentHealth -= Damage;
+	if (CurrentHealth <= 0) {
+		UE_LOG(LogTemp, Warning, TEXT("player health is below 0!"), Damage);
+	}
+	return;
+}
+
+//슬로우 적용
+void AOblivioCharacter::ApplyCCSlow(float SpeedMultiplier, float Duration) {
+	UE_LOG(LogTemp, Warning, TEXT("slow to the player!"));
+	//슬로우 적용할거면 구현
+}
+
+//스턴 적용
+void AOblivioCharacter::ApplyCCStun(float Duration) {
+	UE_LOG(LogTemp, Warning, TEXT("Stun the player!"));
+	//스턴 적용할거면 구현
+}
+
+//생존여부 반환
+bool AOblivioCharacter::IsAlive() const {	
+	if (CurrentHealth >= 0) {
+		UE_LOG(LogTemp, Warning, TEXT("Player Alive!"));
+	}
+	else {
+		UE_LOG(LogTemp, Warning, TEXT("Player Dead!"));
+	}
+	return CurrentHealth >= 0;
+	
+}
+//플레이어 피격 호출
+float AOblivioCharacter::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+	const float AppliedDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+
+	UE_LOG(LogTemp, Warning, TEXT("Player is taking %f Damage!"), DamageAmount);
+	OnPlayerDamaged.Broadcast(AppliedDamage, CurrentHealth, MaxHealth);
+	return DamageAmount;
 }

@@ -1,13 +1,12 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
+//WeaponBase.h
 #pragma once
 
 #include "CoreMinimal.h"
-#include "LightAttackComponent.h"
 
 #include "GameFramework/Actor.h"
 #include "WeaponBase.generated.h"
 
+class ULightAttackComponent;
 UCLASS()
 class OBLIVIO_API AWeaponBase : public AActor
 {

@@ -1,15 +1,22 @@
 ﻿#pragma once
 
+#include "OblivioComponents/CombatInterface.h"
+
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
 #include "OblivioCharacter.generated.h"
 
+//피격 판정용 델리게이트
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FPlayerDamagedSignature, float, DamageAmount, float, CurrentHealth, float, MaxHealth);
+
 class UOblivioCrafting;
 class AWeaponBase;
 class AThrowableWeapon;
+class USoundPropagationComponent;
+class UPlayerCombatComponent;
 UCLASS()
-class OBLIVIO_API AOblivioCharacter : public ACharacter
+class OBLIVIO_API AOblivioCharacter : public ACharacter, public ICombatInterface
 {
 	GENERATED_BODY()
 
@@ -19,6 +26,9 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+
+	float CurrentHealth;
+	float MaxHealth;
 
 public:
 	// 컨트롤러
@@ -46,6 +56,12 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	class  UOblivioCrafting* CraftingComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
+	TObjectPtr<USoundPropagationComponent> SoundPropagationComp;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
+	TObjectPtr<UPlayerCombatComponent> CombatComp;
 
 	//무기 클래스
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
@@ -114,4 +130,13 @@ public:
 
 	void UpdateStatus(float DeltaTime);
 	void UpdateFlashlightVisuals();
+
+	//전투 컴포넌트용
+	virtual void ApplyHealth(float Damage) override;
+	virtual void ApplyCCSlow(float SpeedMultiplier, float Duration) override;
+	virtual void ApplyCCStun(float Duration) override;
+	virtual bool IsAlive() const override;
+	
+	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+	FPlayerDamagedSignature OnPlayerDamaged;
 };

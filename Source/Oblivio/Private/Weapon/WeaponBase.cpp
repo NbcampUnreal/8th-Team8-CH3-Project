@@ -1,8 +1,6 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
+//WeaponBase.cpp
 #include "Weapon/WeaponBase.h"
-#include "LightAttackComponent.h"
+#include "OblivioComponents/LightAttackComponent.h"
 
 // Sets default values
 AWeaponBase::AWeaponBase()
