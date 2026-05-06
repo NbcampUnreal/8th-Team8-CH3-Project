@@ -1,4 +1,5 @@
 ﻿#include "AIEnemy/EnemyBase.h"
+#include "Combat/EnemyCombatRegistrySubsystem.h"
 #include "AIEnemy/EnemyAIController.h"
 #include "AIController.h"
 #include "OblivioGameMode.h"
@@ -10,6 +11,7 @@
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
 #include "OblivioCharacter.h"
+#include "OblivioComponents/EnemyCombatComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Engine/World.h"
 
@@ -33,6 +35,8 @@ AEnemyBase::AEnemyBase()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
+
+	CombatComp = CreateDefaultSubobject<UEnemyCombatComponent>(TEXT("CombatComp"));
 }
 
 // 생존·체력·첫 FSM. 패트롤 포인트가 있으면 플레이어 없을 때 Patrol로 시작 가능.
@@ -66,9 +70,29 @@ void AEnemyBase::BeginPlay()
 	{
 		IdleWanderRetargetCooldown = FMath::FRandRange(0.5f, 2.0f);
 	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UEnemyCombatRegistrySubsystem* Reg = World->GetSubsystem<UEnemyCombatRegistrySubsystem>())
+		{
+			Reg->RegisterEnemy(this);
+		}
+	}
 }
 
-// 빛 정지 중엔 노출 감쇠 없음(기존 동작). CC 경직 중엔 감쇠는 수행.
+void AEnemyBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UEnemyCombatRegistrySubsystem* Reg = World->GetSubsystem<UEnemyCombatRegistrySubsystem>())
+		{
+			Reg->UnregisterEnemy(this);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+// CC 경직(외부 시스템)에 막혔을 때만 행동 정지. 빛 슬로우/정지/사망은 전투 측이 ApplyCC*/TakeDamage로 처리.
 void AEnemyBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -83,19 +107,12 @@ void AEnemyBase::Tick(float DeltaSeconds)
 		FindDefaultTarget();
 	}
 
-	// 경직/빛정지 중에도 FSM은 갱신(Chase 등으로 전환). 이동·공격 스위치만 아래에서 생략.
+	// 경직 중에도 FSM 전이는 갱신, 이동·공격 스위치만 아래에서 생략.
 	UpdateState();
-
-	if (!bIsLightFrozen)
-	{
-		UpdateLightExposure(DeltaSeconds);
-	}
 
 	DrawAggroDebug();
 
-	// 빛 정지(bIsLightFrozen)는 추격·패트롤 등을 막되, TrackLight는 손전등 방향으로 이동해야 하므로 예외.
-	// 노출 기반 이속 0(LightMult)도 RefreshWalkSpeedFromSources에서 TrackLight일 때 무시.
-	if (bCCStunned || (bIsLightFrozen && EnemyState != EEnemyAIState::TrackLight))
+	if (bCCStunned)
 	{
 		return;
 	}
@@ -135,16 +152,11 @@ EEnemyCCState AEnemyBase::GetCrowdControlState() const
 	{
 		return EEnemyCCState::None;
 	}
-	if (bCCStunned || bIsLightFrozen)
+	if (bCCStunned)
 	{
 		return EEnemyCCState::Stunned;
 	}
 	if (bCCSlowActive)
-	{
-		return EEnemyCCState::Slowed;
-	}
-	const float LightMult = ComputeLightSpeedMultiplier();
-	if (LightMult < 1.0f - KINDA_SMALL_NUMBER)
 	{
 		return EEnemyCCState::Slowed;
 	}
@@ -161,9 +173,10 @@ void AEnemyBase::ApplyCCSlow(float SpeedMultiplier, float Duration)
 	const float Clamped = FMath::Clamp(SpeedMultiplier, 0.0f, 1.0f);
 	bCCSlowActive = true;
 	CCSlowSpeedMultiplier = FMath::Min(CCSlowSpeedMultiplier, Clamped);
-
+	UE_LOG(LogTemp, Warning, TEXT("ApplyCCSlow Called"));	//CombatComponent호출 체크용
 	if (Duration > KINDA_SMALL_NUMBER)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Setting slow timer")); //CombatComponent호출 체크용
 		float NewDuration = Duration;
 		if (UWorld* World = GetWorld())
 		{
@@ -190,9 +203,10 @@ void AEnemyBase::ApplyCCStun(float Duration)
 	bCCStunned = true;
 	StopEnemyMovement();
 	RefreshWalkSpeedFromSources();
-
+	UE_LOG(LogTemp, Warning, TEXT("ApplyCCStun Called"));	//CombatComponent호출 체크
 	if (Duration > KINDA_SMALL_NUMBER)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Setting stun timer")); //CombatComponent호출 체크용
 		float NewDuration = Duration;
 		if (UWorld* World = GetWorld())
 		{
@@ -249,7 +263,7 @@ void AEnemyBase::OnCCStunExpired()
 	}
 }
 
-// 피격 판단만 수행. 실제 체력 차감·상태이상·사망 처리는 전투 시스템에서 담당.
+// 피격: 부모(DamageType 처리) 후 현재 체력 반영, OnEnemyDamaged, 0 이하면 Die().
 float AEnemyBase::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	const float AppliedDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
@@ -259,12 +273,27 @@ float AEnemyBase::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent
 		return 0.0f;
 	}
 
-	UE_LOG(LogTemp, Verbose, TEXT("%s received hit decision %.1f. Combat system owns the result."),
-		*GetNameSafe(this), AppliedDamage);
-
+	CurrentHealth = FMath::Max(0.0f, CurrentHealth - AppliedDamage);
+	NotifyEnemyDamageApplied(AppliedDamage);
 	OnEnemyDamaged.Broadcast(AppliedDamage, CurrentHealth, MaxHealth);
+	if (UWorld* World = GetWorld())
+	{
+		if (UEnemyCombatRegistrySubsystem* Reg = World->GetSubsystem<UEnemyCombatRegistrySubsystem>())
+		{
+			Reg->NotifyEnemyDamaged(this, AppliedDamage, CurrentHealth, MaxHealth);
+		}
+	}
+
+	if (CurrentHealth <= 0.0f)
+	{
+		Die();
+	}
 
 	return AppliedDamage;
+}
+
+void AEnemyBase::NotifyEnemyDamageApplied(float /*AppliedDamage*/)
+{
 }
 
 // 손전등 피격 판단만 수행. 빛 피해·둔화·정지·사망 처리는 전투 시스템에서 담당.
@@ -280,16 +309,60 @@ void AEnemyBase::OnLightHit(float Intensity, float Duration)
 	OnEnemyLightHit.Broadcast(this, ClampedIntensity, ClampedDuration);
 }
 
-// 플래시뱅 피격 판단만 수행. 실제 결과는 전투 시스템에서 담당.
-void AEnemyBase::OnFlashbangHit(float DamageAmount)
+static void BroadcastEnemyDamageToRegistry(AEnemyBase* Self, float Amount, float Cur, float Max)
 {
-	if (!IsAlive())
+	Self->OnEnemyDamaged.Broadcast(Amount, Cur, Max);
+	if (UWorld* World = Self->GetWorld())
+	{
+		if (UEnemyCombatRegistrySubsystem* Reg = World->GetSubsystem<UEnemyCombatRegistrySubsystem>())
+		{
+			Reg->NotifyEnemyDamaged(Self, Amount, Cur, Max);
+		}
+	}
+}
+
+void AEnemyBase::Heal(float Amount)
+{
+	if (!IsAlive() || Amount <= 0.f)
 	{
 		return;
 	}
+	const float Old = CurrentHealth;
+	CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + Amount);
+	const float Delta = CurrentHealth - Old;
+	if (Delta > 0.f)
+	{
+		// 회복은 음수 형태로 브로드캐스트(부호로 구분).
+		BroadcastEnemyDamageToRegistry(this, -Delta, CurrentHealth, MaxHealth);
+	}
+}
 
-	const float DamageToApply = DamageAmount > 0.0f ? DamageAmount : DefaultFlashbangDamage;
-	OnEnemyDamaged.Broadcast(DamageToApply, CurrentHealth, MaxHealth);
+void AEnemyBase::SetCurrentHealth(float NewHealth)
+{
+	if (EnemyState == EEnemyAIState::Dead)
+	{
+		return;
+	}
+	const float Old = CurrentHealth;
+	CurrentHealth = FMath::Clamp(NewHealth, 0.f, MaxHealth);
+	const float Delta = Old - CurrentHealth;
+	if (FMath::Abs(Delta) > KINDA_SMALL_NUMBER)
+	{
+		BroadcastEnemyDamageToRegistry(this, Delta, CurrentHealth, MaxHealth);
+	}
+	if (CurrentHealth <= 0.f)
+	{
+		Die();
+	}
+}
+
+void AEnemyBase::KillEnemy()
+{
+	if (EnemyState == EEnemyAIState::Dead)
+	{
+		return;
+	}
+	Die();
 }
 
 // 수동으로 추적 대상 교체 후 FSM 즉시 갱신
@@ -706,6 +779,13 @@ void AEnemyBase::PerformAttack_Implementation(AActor* Target)
 	}
 
 	OnEnemyAttackCommitted.Broadcast(this, Target, AttackDamage);
+	if (UWorld* World = GetWorld())
+	{
+		if (UEnemyCombatRegistrySubsystem* Reg = World->GetSubsystem<UEnemyCombatRegistrySubsystem>())
+		{
+			Reg->NotifyEnemyAttackCommitted(this, Target, AttackDamage);
+		}
+	}
 }
 
 // PatrolPoints 순서대로 도착 반경 안 들어오면 다음 지점
@@ -880,10 +960,8 @@ void AEnemyBase::Die()
 	SetEnemyState(EEnemyAIState::Dead);
 	StopEnemyMovement();
 
-	GetWorldTimerManager().ClearTimer(LightFreezeTimerHandle);
 	GetWorldTimerManager().ClearTimer(CCSlowTimerHandle);
 	GetWorldTimerManager().ClearTimer(CCStunTimerHandle);
-	bIsLightFrozen = false;
 	bCCSlowActive = false;
 	bCCStunned = false;
 	CCSlowSpeedMultiplier = 1.0f;
@@ -891,6 +969,13 @@ void AEnemyBase::Die()
 	GetCharacterMovement()->DisableMovement();
 	SetActorEnableCollision(false);
 	OnEnemyDied.Broadcast(this);
+	if (UWorld* World = GetWorld())
+	{
+		if (UEnemyCombatRegistrySubsystem* Reg = World->GetSubsystem<UEnemyCombatRegistrySubsystem>())
+		{
+			Reg->NotifyEnemyDied(this);
+		}
+	}
 
 	SetLifeSpan(FMath::Max(0.0f, CorpseLifeSpan));
 
@@ -916,6 +1001,13 @@ void AEnemyBase::SetEnemyState(EEnemyAIState NewState)
 	}
 	NotifyEnemyStateChanged(OldState, NewState);
 	OnEnemyFSMStateChanged.Broadcast(this, OldState, NewState);
+	if (UWorld* World = GetWorld())
+	{
+		if (UEnemyCombatRegistrySubsystem* Reg = World->GetSubsystem<UEnemyCombatRegistrySubsystem>())
+		{
+			Reg->NotifyEnemyFSMStateChanged(this, OldState, NewState);
+		}
+	}
 	if (NewState == EEnemyAIState::TrackLight && OldState != EEnemyAIState::TrackLight)
 	{
 		OnEnemyTrackLightPhase.Broadcast(this, true);
@@ -942,36 +1034,6 @@ void AEnemyBase::StopEnemyMovement()
 	}
 }
 
-// 매 틱 LightExposure 선형 감쇠 + 이속 갱신(FSM 전환 직후에도 Chase/Wander 반영)
-void AEnemyBase::UpdateLightExposure(float DeltaSeconds)
-{
-	if (LightExposure > 0.0f && LightExposureDecayPerSecond > 0.0f)
-	{
-		LightExposure = FMath::Max(0.0f, LightExposure - LightExposureDecayPerSecond * DeltaSeconds);
-	}
-	if (IsAlive())
-	{
-		RefreshWalkSpeedFromSources();
-	}
-}
-
-float AEnemyBase::ComputeLightSpeedMultiplier() const
-{
-	if (LightDeathExposureThreshold > 0.0f && LightExposure >= LightDeathExposureThreshold)
-	{
-		return 0.0f;
-	}
-	if (LightExposure >= LightFreezeExposureThreshold)
-	{
-		return LightFreezeSpeedMultiplier;
-	}
-	if (LightExposure >= LightSlowExposureThreshold)
-	{
-		return LightSlowSpeedMultiplier;
-	}
-	return 1.0f;
-}
-
 void AEnemyBase::RefreshWalkSpeedFromSources()
 {
 	if (!IsAlive() || !GetCharacterMovement())
@@ -979,22 +1041,15 @@ void AEnemyBase::RefreshWalkSpeedFromSources()
 		return;
 	}
 
-	const bool bLightFreezeBlocksMove = bIsLightFrozen && EnemyState != EEnemyAIState::TrackLight;
-	const bool bImmobilized = bCCStunned || bLightFreezeBlocksMove;
-	if (bImmobilized)
+	if (bCCStunned)
 	{
 		GetCharacterMovement()->MaxWalkSpeed = 0.0f;
 		return;
 	}
 
-	float LightMult = ComputeLightSpeedMultiplier();
-	if (EnemyState == EEnemyAIState::TrackLight)
-	{
-		LightMult = 1.0f;
-	}
 	const float CCSlowMult = bCCSlowActive ? CCSlowSpeedMultiplier : 1.0f;
 	const float BaseSpeed = GetLocomotionBaseSpeed();
-	GetCharacterMovement()->MaxWalkSpeed = BaseSpeed * LightMult * CCSlowMult;
+	GetCharacterMovement()->MaxWalkSpeed = BaseSpeed * CCSlowMult;
 }
 
 float AEnemyBase::GetLocomotionBaseSpeed() const
@@ -1025,7 +1080,7 @@ void AEnemyBase::DrawAggroDebug()
 		FindDefaultTarget();
 	}
 
-	const bool bPausedAi = bCCStunned || (bIsLightFrozen && EnemyState != EEnemyAIState::TrackLight);
+	const bool bPausedAi = bCCStunned;
 	const bool bInRange = HasValidAggroTarget();
 
 	FColor Color;
@@ -1058,19 +1113,6 @@ void AEnemyBase::DrawAggroDebug()
 #endif
 }
 
-// OnLightHit 타이머 만료: 빛 정지 해제 후 빛·CC 배율 재적용 및 FSM 갱신
-void AEnemyBase::RestoreMovementAfterLight()
-{
-	if (!IsAlive())
-	{
-		return;
-	}
-
-	bIsLightFrozen = false;
-	RefreshWalkSpeedFromSources();
-	UpdateState();
-}
-
 void AEnemyBase::SetEnemySoundVolumeMultiplier(float NewMultiplier)
 {
 	EnemySoundVolumeMultiplier = FMath::Clamp(NewMultiplier, 0.0f, 4.0f);
@@ -1079,4 +1121,9 @@ void AEnemyBase::SetEnemySoundVolumeMultiplier(float NewMultiplier)
 
 void AEnemyBase::ApplyEnemySoundVolumes()
 {
+}
+
+void AEnemyBase::ApplyHealth(float Damage) {	//전투 컴포넌트 체력 업데이트용
+	UE_LOG(LogTemp, Warning, TEXT("Enemy %s ApplyHealth called!"), *GetName());
+	return;
 }
