@@ -15,8 +15,10 @@ AOblivioCharacterController::AOblivioCharacterController()
 	, RunAction(nullptr)
 	, FlashlightToggleAction(nullptr)
 	, FlashbangAction(nullptr)
+	, FlareAction(nullptr)
 	, InventoryAction(nullptr)
 	, CraftingAction(nullptr)
+	, RotateAction(nullptr)
 	, PlaceObstacleAction(nullptr)
 	, SelectObstacleAction(nullptr)
 	, InteractAction(nullptr)
@@ -58,6 +60,7 @@ void AOblivioCharacterController::SetupInputComponent()
 		EIC->BindAction(FlareAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnFlare);
 		EIC->BindAction(InventoryAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnInventoryToggle);
 		EIC->BindAction(CraftingAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnCraftingToggle);
+		EIC->BindAction(RotateAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnRotatePreview);
 		EIC->BindAction(PlaceObstacleAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnPlaceObstacle);
 		//EIC->BindAction(SelectObstacleAction, ETriggerEvent::Started, this, &AOblivioCharacterController::OnSelectObstacle);
 		EIC->BindAction(SelectObstacleAction, ETriggerEvent::Triggered, this, &AOblivioCharacterController::OnSelectObstacle);
@@ -152,6 +155,17 @@ void AOblivioCharacterController::OnCraftingToggle(const FInputActionValue& Valu
 			{
 				Subsystem->RemoveMappingContext(CraftingMappingContext);
 			}
+		}
+	}
+}
+
+void AOblivioCharacterController::OnRotatePreview(const FInputActionValue& Value)
+{
+	if (AOblivioCharacter* ObjChar = Cast<AOblivioCharacter>(GetPawn()))
+	{
+		if (ObjChar->CraftingComponent)
+		{
+			ObjChar->CraftingComponent->RotatePreview();
 		}
 	}
 }

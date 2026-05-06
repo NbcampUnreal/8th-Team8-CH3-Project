@@ -52,6 +52,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Input")
 	class UInputAction* CraftingAction;
 
+	UPROPERTY(EditAnywhere, Category = "Input")
+	class UInputAction* RotateAction;
+
 	UPROPERTY(EditAnyWhere, Category = "Input")
 	class UInputAction* PlaceObstacleAction;
 
@@ -69,6 +72,7 @@ protected:
 	void OnFlare(const FInputActionValue& Value);
 	void OnInventoryToggle(const FInputActionValue& Value);
 	void OnCraftingToggle(const FInputActionValue& Value);
+	void OnRotatePreview(const FInputActionValue& Vlaue);
 	void OnPlaceObstacle(const FInputActionValue& Value);
 	void OnInteract(const FInputActionValue& Value);
 

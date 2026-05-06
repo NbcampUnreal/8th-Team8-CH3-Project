@@ -32,7 +32,7 @@ public:
 
     /** 현재 미리보기 중인 장애물 액터 */
     UPROPERTY()
-    class AObstacleBase* PreviewActor;
+    class AObstacleBase* PreviewActor = nullptr;
 
     /** 크래프팅 모드 활성화 여부 */
     bool bIsCraftingModeActive;
@@ -44,6 +44,8 @@ public:
     /** 크래프팅 시작/종료 */
     void ToggleCraftingMode();
 
+    void RotatePreview();
+
     /** 실제 설치 실행 */
     void PlaceObstacle();
 
@@ -54,5 +56,5 @@ private:
     /** 자원 체크 로직 (인벤토리 시스템과 연동 필요) */
     bool CanAfford(class AObstacleBase* TargetObstacle);
 
-		
+    FRotator CurrentPreviewRotation = FRotator::ZeroRotator;
 };
