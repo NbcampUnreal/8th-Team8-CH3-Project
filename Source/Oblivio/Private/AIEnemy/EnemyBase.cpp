@@ -164,10 +164,10 @@ void AEnemyBase::ApplyCCSlow(float SpeedMultiplier, float Duration)
 	const float Clamped = FMath::Clamp(SpeedMultiplier, 0.0f, 1.0f);
 	bCCSlowActive = true;
 	CCSlowSpeedMultiplier = FMath::Min(CCSlowSpeedMultiplier, Clamped);
-	UE_LOG(LogTemp, Warning, TEXT("ApplyCCSlow Called"));
+	UE_LOG(LogTemp, Warning, TEXT("ApplyCCSlow Called"));	//CombatComponent호출 체크용
 	if (Duration > KINDA_SMALL_NUMBER)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Setting slowtimer"));
+		UE_LOG(LogTemp, Warning, TEXT("Setting slow timer")); //CombatComponent호출 체크용
 		float NewDuration = Duration;
 		if (UWorld* World = GetWorld())
 		{
@@ -194,9 +194,10 @@ void AEnemyBase::ApplyCCStun(float Duration)
 	bCCStunned = true;
 	StopEnemyMovement();
 	RefreshWalkSpeedFromSources();
-
+	UE_LOG(LogTemp, Warning, TEXT("ApplyCCStun Called"));	//CombatComponent호출 체크
 	if (Duration > KINDA_SMALL_NUMBER)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Setting stun timer")); //CombatComponent호출 체크용
 		float NewDuration = Duration;
 		if (UWorld* World = GetWorld())
 		{
