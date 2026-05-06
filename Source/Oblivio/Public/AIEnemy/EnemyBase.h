@@ -8,11 +8,11 @@
 //   · TrackLight: 콘 안 + 적 정면에 빛(기본)일 때만 스포트 위치 추적; 손전등만 꺼지면 sealed 후 마지막 점까지(어그로 시 Chase 우선)
 //   · AggroRadius: UE 단위 cm (1000 ≈ 10m). 0이면 거리 무시 항상 추격. 타겟은 GetPlayerPawn(0)
 //
-// 전투 위임: EnemyBase는 공격 가능/피격 여부를 판단해 이벤트만 발행.
-//   · 실제 피해량, 상태이상, 사망, 연출은 전투 시스템 또는 BP PerformAttack/델리게이트에서 처리.
-//   · OnLightHit/OnFlashbangHit도 빛 피격 판단 이벤트만 발행하고 직접 둔화·정지·사망시키지 않음.
+// 전투(외부): TakeDamage 적용 → CurrentHealth 차감 → OnEnemyDamaged → 0이하면 Die().
+//   PerformAttack 근접 판단은 OnEnemyAttackCommitted 만 발행(실 데미지/연출은 전투 측).
+//   · OnLightHit 도 이벤트만 발행(특수 AI용·Luxeater 흡수). 빛으로 슬로우/스턴/사망은 전투 측이 ApplyCC*/TakeDamage로 처리.
 //
-// CC(기술·아이템 등): EEnemyCCState — Slow(이속 배율), Stun(경직·행동 정지). 빛 이속 배율과 곱함.
+// CC(기술·아이템 등): EEnemyCCState — Slow(이속 배율), Stun(경직·행동 정지).
 //   · Duration<=0 이면 타이머 없이 유지 → ClearCCSlow / ClearCCStun 으로 해제
 //
 // NavMesh가 있어야 MoveToActor / MoveToLocation 동작. 레벨에 Nav Mesh Bounds 권장.
@@ -64,7 +64,7 @@ enum class EEnemyStimulusType : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEnemyDiedSignature, AEnemyBase*, Enemy);
-/** 피격 판단 시: (들어온 데미지, 현재 체력, 최대체력). 실제 체력/상태/사망 처리는 전투 시스템에서 담당. */
+/** TakeDamage 적용 후: (실제 들어간 데미지, 차감 직후 현재 체력, 최대체력). PerformAttack 브로드캐스트와 별개. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyDamagedSignature, float, DamageAmount, float, CurrentHealth, float, MaxHealth);
 
 /** FSM 전이 시(Dead 포함). BP에서 전투·연출 테스트용. */
@@ -90,7 +90,7 @@ public:
 
 	// 매 틱: 빛 노출 감쇠 → 타겟 재탐색 → FSM 갱신 → 현재 상태 실행(이동/공격/패트롤 등)
 	virtual void Tick(float DeltaSeconds) override;
-	// 엔진 damage 파이프라인 진입 판단. 실제 체력 반영/사망 처리는 전투 시스템에 위임.
+	// 엔진 damage 파이프라인. 부모 처리 후 현재 적 체력 반영 및 OnEnemyDamaged, 사망 시 Die().
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy|State")
@@ -122,11 +122,35 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Light")
 	virtual void OnLightHit(float Intensity, float Duration);
 
-	UFUNCTION(BlueprintCallable, Category = "Enemy|Light")
-	virtual void OnFlashbangHit(float DamageAmount = 0.0f);
-
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Target")
 	void SetTargetActor(AActor* NewTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Target")
+	AActor* GetTargetActor() const { return TargetActor; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
+	float GetAttackDamage() const { return AttackDamage; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
+	float GetAttackRange() const { return AttackRange; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
+	float GetAttackCooldown() const { return AttackCooldown; }
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Combat")
+	void SetAttackDamage(float NewDamage) { AttackDamage = FMath::Max(0.f, NewDamage); }
+
+	/** 회복(양수). 0 이하 무시. UI/회복 스킬용. OnEnemyDamaged 로 음수 데미지 형태 브로드캐스트 가능하나 여기선 별도. */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Stats")
+	void Heal(float Amount);
+
+	/** 체력 강제 설정(0~MaxHealth 클램프). 0이면 Die() 호출. 전투 시스템이 단일 진실원천일 때 사용. */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Stats")
+	void SetCurrentHealth(float NewHealth);
+
+	/** Die() 직접 호출 (전투 측 즉살/연출용). 이미 Dead면 무시. */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Stats")
+	void KillEnemy();
 
 	/**
 	 * 자극 위치 보고. 어그로가 없을 때만 Investigate 큐에 넣음(플레이어 추적보다 우선순위 낮음은 기존과 동일).
@@ -183,12 +207,10 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	TObjectPtr<UEnemyCombatComponent> CombatComp;
-
-	UFUNCTION(BlueprintPure, Category = "Enemy|CrowdControl")
-	bool IsLightCrowdFrozen() const { return bIsLightFrozen; }
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Stats", meta = (ClampMin = "1.0"))
 	float MaxHealth = 100.0f;
@@ -271,27 +293,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Idle", meta = (ClampMin = "1.0"))
 	float IdleWanderAcceptanceRadius = 64.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Light", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float LightSlowSpeedMultiplier = 0.4f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Light", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float LightFreezeSpeedMultiplier = 0.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Light", meta = (ClampMin = "0.0"))
-	float DefaultFlashbangDamage = 9999.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Light", meta = (ClampMin = "0.0"))
-	float LightSlowExposureThreshold = 0.5f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Light", meta = (ClampMin = "0.0"))
-	float LightFreezeExposureThreshold = 1.5f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Light", meta = (ClampMin = "0.0"))
-	float LightDeathExposureThreshold = 3.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Light", meta = (ClampMin = "0.0"))
-	float LightExposureDecayPerSecond = 0.35f;
-
 	/** true면 플레이어 손전등(앞면+콘) 조건일 때 TrackLight FSM 사용. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Light|Track")
 	bool bEnableLightTracking = true;
@@ -355,22 +356,24 @@ protected:
 	virtual void UpdateSearch(float DeltaSeconds);
 	virtual void UpdateIdle(float DeltaSeconds);
 	virtual void UpdateTrackLight(float DeltaSeconds);
+public:
 	virtual void Die();
+protected:
 
 	void SetEnemyState(EEnemyAIState NewState);
 
 	/** SetEnemyState에서 실제로 바뀐 직후 호출(Old→New). 기본 빈 구현. */
 	virtual void NotifyEnemyStateChanged(EEnemyAIState OldState, EEnemyAIState NewState) {}
+
+	/** TakeDamage로 CurrentHealth를 차감한 직후(사망 처리 전). 보스 페이즈 갱신 등에 사용. */
+	virtual void NotifyEnemyDamageApplied(float AppliedDamage);
 	bool IsTargetInAttackRange() const;
 	bool HasValidAggroTarget() const;
 	void StopEnemyMovement();
-	void UpdateLightExposure(float DeltaSeconds);
-	void RestoreMovementAfterLight();
 
 	void RefreshWalkSpeedFromSources();
 	/** Chase·Attack vs 그 외 이동 기준 이속. 파생 클래스에서 절름발이 추격자 등 이단 속도용 오버라이드. */
 	virtual float GetLocomotionBaseSpeed() const;
-	float ComputeLightSpeedMultiplier() const;
 	void OnCCSlowExpired();
 	void OnCCStunExpired();
 	void DrawAggroDebug();
@@ -380,11 +383,6 @@ protected:
 
 private:
 	float LastAttackTime = -BIG_NUMBER;
-	/** 손전등 등으로 누적된 빛 노출. 매 틱 감쇠(LightExposureDecayPerSecond) */
-	float LightExposure = 0.0f;
-	/** 이동속 0에 가깝게 막힌 상태 — Tick 초반에 return */
-	bool bIsLightFrozen = false;
-	FTimerHandle LightFreezeTimerHandle;
 
 	bool bCCSlowActive = false;
 	float CCSlowSpeedMultiplier = 1.0f;

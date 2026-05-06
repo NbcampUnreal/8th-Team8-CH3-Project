@@ -67,6 +67,11 @@ void ALuxeaterEnemy::NotifyBossHealthChanged(float NewCurrentHealth, float NewMa
 	UpdateHealthPhase();
 }
 
+void ALuxeaterEnemy::NotifyEnemyDamageApplied(float /*AppliedDamage*/)
+{
+	UpdateHealthPhase();
+}
+
 void ALuxeaterEnemy::UpdateChase()
 {
 	AAIController* const AI = Cast<AAIController>(GetController());
