@@ -27,6 +27,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
     TMap<int32, TSubclassOf<class AObstacleBase>> CraftingRecipes;
 
+    /** 소지한 나무 개수 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting|Resources")
+    int32 WoodCount = 0;
+
+    /** 소지한 철재 개수 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting|Resources")
+    int32 IronCount = 0;
+
     /** 인덱스로 장애물 선택 */
     void SelectObstacle(int32 Index);
 
