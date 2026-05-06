@@ -247,7 +247,41 @@ void AOblivioCharacter::Interact()
 		//----
 	}
 }
+void AOblivioCharacter::TakePointDamage(float DamageAmount)
+{
+	if (bIsDead) return;
+	Health = FMath::Max(0.0f, Health - DamageAmount);
 
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red,
+			FString::Printf(TEXT("Damage: %.1f | Remaining HP: %.1f"), DamageAmount, Health));
+	}
+	if (Health <= 0.0f)
+	{
+		HandleDeath();
+	}
+}
+void AOblivioCharacter::HandleDeath()
+{
+	if (bIsDead) return;
+
+	bIsDead = true;
+
+	// 입력 중단 및 게임오버 호출
+	DisableInput(Cast<APlayerController>(GetController()));
+
+	AOblivioGameMode* GM = Cast<AOblivioGameMode>(UGameplayStatics::GetGameMode(GetWorld()));
+	if (GM)
+	{
+		GM->GameOver();
+	}
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Orange, TEXT("CHARACTER DIED"));
+	}
+}
 void AOblivioCharacter::UpdateStatus(float DeltaTime)
 {
 	float DepleteRate = bIsRunning ? 2.0f : 1.0f;
@@ -270,13 +304,9 @@ void AOblivioCharacter::UpdateStatus(float DeltaTime)
 	GetCharacterMovement()->MaxWalkSpeed = bIsRunning ? RunSpeed : WalkSpeed;
 
 	//추가: 체력 0이 되면 게임오버
-	if (Health <= 0 && bIsDead == false)
+	if (Health <= 0 && !bIsDead)
 	{
-		bIsDead = true;
-		DisableInput(Cast<APlayerController>(GetController()));
-		AOblivioGameMode* GM = Cast<AOblivioGameMode>(UGameplayStatics::GetGameMode(GetWorld()));
-		if (!GM) return;
-		GM->GameOver();
+		HandleDeath();
 	}
 }
 

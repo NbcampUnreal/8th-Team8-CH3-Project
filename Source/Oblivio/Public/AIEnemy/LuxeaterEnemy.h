@@ -10,8 +10,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FLuxeaterLightAbsorbedSignature, 
 /**
  * ALuxeaterEnemy - 6F boss, "빛을 먹는 자"
  * - 빛 피격 판단을 받으면 빛을 흡수해 이동속도·스케일만 증가 (체력 회복/상한 증가 없음)
- * - 페이즈는 체력 기준: 1페이즈 시작, 체력 50% 이하에서 2페이즈
- * - 실제 피해/CC/공격 결과는 전투 시스템에 위임하고, 보스는 강화 상태만 관리
+ * - 페이즈는 체력 기준: 1페이즈 시작, 체력 50% 이하에서 2페이즈 (피격·동기화 후 자동 갱신)
+ * - 외부 전투 모듈이 단일 진실 원천이면 NotifyBossHealthChanged로 미러링. 로컬 TakeDamage와 동시 사용 시 이중 차감 주의.
  */
 UCLASS(Blueprintable)
 class OBLIVIO_API ALuxeaterEnemy : public AEnemyBase
@@ -48,6 +48,11 @@ protected:
 	virtual void UpdateChase() override;
 	virtual void UpdateAttack() override;
 
+	void ApplyLightEmpowerment();
+	void UpdateHealthPhase();
+
+	virtual void NotifyEnemyDamageApplied(float AppliedDamage) override;
+
 	/** 빛 흡수 누적량 1당 증가하는 이동속도(cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Luxeater|Light", meta = (ClampMin = "0.0"))
 	float SpeedGainPerLight = 35.0f;
@@ -74,7 +79,4 @@ private:
 	FVector InitialScale = FVector::OneVector;
 	float AbsorbedLight = 0.0f;
 	int32 BossPhase = 1;
-
-	void ApplyLightEmpowerment();
-	void UpdateHealthPhase();
 };
