@@ -19,12 +19,15 @@
 // 비어그로 Idle: PatrolPoints 없을 때 IdleWander로 주변 배회(옵션).
 // =============================================================================
 
+#include "OblivioComponents/CombatInterface.h"
+
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "EnemyBase.generated.h"
 
 class AEnemyBase;
 class USpotLightComponent;
+class UEnemyCombatComponent;
 
 /** 적 행동 상태(FSM). CC(경직 등)는 별도 플래그로 처리 — 상태 이름은 '의도'만 표현. */
 UENUM(BlueprintType)
@@ -78,7 +81,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnemyTargetChangedSignature, AEnem
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnemyLightHitSignature, AEnemyBase*, Enemy, float, Intensity, float, Duration);
 
 UCLASS(Blueprintable)
-class OBLIVIO_API AEnemyBase : public ACharacter
+class OBLIVIO_API AEnemyBase : public ACharacter, public ICombatInterface//전투 컴포넌트용 인터페이스 추가 상속
 {
 	GENERATED_BODY()
 
@@ -94,18 +97,18 @@ public:
 	EEnemyAIState GetEnemyState() const { return EnemyState; }
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy|State")
-	bool IsAlive() const { return EnemyState != EEnemyAIState::Dead && CurrentHealth > 0.0f; }
+	bool IsAlive() const override { return EnemyState != EEnemyAIState::Dead && CurrentHealth > 0.0f; } //인터페이스 오버라이드 키워드 추가
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|CrowdControl")
 	EEnemyCCState GetCrowdControlState() const;
 
 	/** SpeedMultiplier: 1=정상, 0.5=절반 이속. Duration<=0 이면 ClearCCSlow 할 때까지 유지. */
 	UFUNCTION(BlueprintCallable, Category = "Enemy|CrowdControl")
-	void ApplyCCSlow(float SpeedMultiplier, float Duration = 0.0f);
+	void ApplyCCSlow(float SpeedMultiplier, float Duration = 0.0f) override;	//인터페이스 오버라이드 키워드 추가
 
 	/** 경직: AI/추격·공격 중단. Duration<=0 이면 ClearCCStun 할 때까지. */
 	UFUNCTION(BlueprintCallable, Category = "Enemy|CrowdControl")
-	void ApplyCCStun(float Duration = 0.0f);
+	void ApplyCCStun(float Duration = 0.0f) override;	//인터페이스 오버라이드 키워드 추가
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy|CrowdControl")
 	void ClearCCSlow();
@@ -134,7 +137,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|FSM")
 	EEnemyStimulusType GetLastReportedStimulusType() const { return LastReportedStimulusType; }
-
+	
 	UFUNCTION(BlueprintPure, Category = "Enemy|Stats")
 	float GetCurrentHealthForUI() const { return CurrentHealth; }
 
@@ -175,8 +178,14 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Enemy|Events|Combat")
 	FEnemyLightHitSignature OnEnemyLightHit;
 
+	//전투 컴포넌트용 인터페이스 함수
+	void ApplyHealth(float Damage) override;
+
 protected:
 	virtual void BeginPlay() override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
+	TObjectPtr<UEnemyCombatComponent> CombatComp;
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|CrowdControl")
 	bool IsLightCrowdFrozen() const { return bIsLightFrozen; }
