@@ -103,6 +103,8 @@ public:
 
 	void FadeOutFlashbang();
 
+	void ReloadBattery();
+
 	bool bIsRunning = false;
 	bool bIsInventoryOpen = false;
 	bool bIsCraftingOpen = false;

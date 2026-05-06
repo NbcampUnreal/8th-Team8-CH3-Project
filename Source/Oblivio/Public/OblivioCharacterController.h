@@ -47,6 +47,9 @@ protected:
 	class UInputAction* FlareAction;
 
 	UPROPERTY(EditAnywhere, Category = "Input")
+	class UInputAction* ReloadAction;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
 	class UInputAction* InventoryAction;
 
 	UPROPERTY(EditAnywhere, Category = "Input")
@@ -70,6 +73,7 @@ protected:
 	void OnFlashlightToggle(const FInputActionValue& Value);
 	void OnFlashbang(const FInputActionValue& Value);
 	void OnFlare(const FInputActionValue& Value);
+	void OnReload(const FInputActionValue& Value);
 	void OnInventoryToggle(const FInputActionValue& Value);
 	void OnCraftingToggle(const FInputActionValue& Value);
 	void OnRotatePreview(const FInputActionValue& Vlaue);
