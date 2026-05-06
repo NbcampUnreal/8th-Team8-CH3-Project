@@ -88,6 +88,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
 	float Thirst = 100.0f;
 
+	UFUNCTION(BlueprintCallable, Category = "Status")
+	void TakePointDamage(float DamageAmount);
+	
+	UFUNCTION(BlueprintCallable, Category = "Status")
+	void HandleDeath();
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status|Flashlight")
 	float BatteryDepletionRate = 2.0f;
 
