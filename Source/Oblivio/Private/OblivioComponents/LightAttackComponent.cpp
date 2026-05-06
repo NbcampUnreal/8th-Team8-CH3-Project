@@ -1,6 +1,6 @@
 //LightAttackComponent.cpp
 
-#include "LightAttackComponent.h"
+#include "OblivioComponents/LightAttackComponent.h"
 #include "AIEnemy/EnemyBase.h"
 
 #include "Engine/OverlapResult.h"
@@ -16,7 +16,7 @@ ULightAttackComponent::ULightAttackComponent()
     // Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
     // off to improve performance if you don't need them.
     PrimaryComponentTick.bCanEverTick = false;
-    LightTime = 1.f;
+    LightTime = 1.f; 
     LightIntensityScale = 5000.f;
 
     DistancePerAngle = 0.5f;
@@ -106,7 +106,7 @@ void ULightAttackComponent::CreateLightAttack(FVector SourceLocation, FVector Li
     else
     {
         // 전방위 구형 범위
-        //DrawDebugSphere(GetWorld(), SourceLocation, LightDistance, 16, FColor::Yellow, false, .5f);
+        DrawDebugSphere(GetWorld(), SourceLocation, LightDistance, 16, FColor::Yellow, false, .5f);
     }
 
     //광원 출력
@@ -126,7 +126,7 @@ void ULightAttackComponent::CreateLightAttack(FVector SourceLocation, FVector Li
     TArray<AActor*> OverlapActors;
 
     UKismetSystemLibrary::SphereOverlapActors(
-        GetOwner(),
+        GetWorld(),
         SourceLocation,
         LightDistance,
         TArray<TEnumAsByte<EObjectTypeQuery>>(),
@@ -175,7 +175,7 @@ void ULightAttackComponent::CreateLightAttack(FVector SourceLocation, FVector Li
     UE_LOG(LogTemp, Warning, TEXT("After Filtering, %d actors left in the light angle"), Candidates.Num());
     //각 액터에 대해 중앙과 캡슐 컴포넌트 접점 2개에 대해 linetrace 진행
     //linetrace 충돌한 액터가 대상 적 액터면 데미지 판정 진행, maxdistance까진 Damage그대로, maxDamageDistance이후로는 데미지 감쇠
-    const UObject* WorldContext = GetOwner();
+    const UObject* WorldContext = GetWorld();
     TSet<AActor*> HitActors;
 
     for (AActor* Target : Candidates)

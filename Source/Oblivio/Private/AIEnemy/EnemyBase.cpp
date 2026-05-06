@@ -10,6 +10,7 @@
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
 #include "OblivioCharacter.h"
+#include "OblivioComponents/EnemyCombatComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Engine/World.h"
 
@@ -33,6 +34,8 @@ AEnemyBase::AEnemyBase()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
+
+	CombatComp = CreateDefaultSubobject<UEnemyCombatComponent>(TEXT("CombatComp"));
 }
 
 // 생존·체력·첫 FSM. 패트롤 포인트가 있으면 플레이어 없을 때 Patrol로 시작 가능.
@@ -161,9 +164,10 @@ void AEnemyBase::ApplyCCSlow(float SpeedMultiplier, float Duration)
 	const float Clamped = FMath::Clamp(SpeedMultiplier, 0.0f, 1.0f);
 	bCCSlowActive = true;
 	CCSlowSpeedMultiplier = FMath::Min(CCSlowSpeedMultiplier, Clamped);
-
+	UE_LOG(LogTemp, Warning, TEXT("ApplyCCSlow Called"));
 	if (Duration > KINDA_SMALL_NUMBER)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Setting slowtimer"));
 		float NewDuration = Duration;
 		if (UWorld* World = GetWorld())
 		{
@@ -1079,4 +1083,9 @@ void AEnemyBase::SetEnemySoundVolumeMultiplier(float NewMultiplier)
 
 void AEnemyBase::ApplyEnemySoundVolumes()
 {
+}
+
+void AEnemyBase::ApplyHealth(float Damage) {	//전투 컴포넌트 체력 업데이트용
+	UE_LOG(LogTemp, Warning, TEXT("Enemy %s ApplyHealth called!"), *GetName());
+	return;
 }
