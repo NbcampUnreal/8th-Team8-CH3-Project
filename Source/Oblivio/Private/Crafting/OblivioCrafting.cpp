@@ -84,7 +84,7 @@ void UOblivioCrafting::SelectObstacle(int32 Index)
             }
 
             bIsCraftingModeActive = true;
-
+            CurrentPreviewRotation = FRotator::ZeroRotator;
             FHitResult TempHit;
             PC->GetHitResultUnderCursor(ECC_Visibility, false, TempHit);
             FVector SpawnLoc = TempHit.bBlockingHit ? TempHit.Location : GetOwner()->GetActorLocation();
@@ -119,6 +119,18 @@ void UOblivioCrafting::SelectObstacle(int32 Index)
         if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("Error: Recipe Index %d not found!"), Index));
     }
 }
+void UOblivioCrafting::RotatePreview()
+{
+    if (!bIsCraftingModeActive) return;
+
+    // Yaw 값을 90도씩 증가 (360도 도달 시 0으로)
+    CurrentPreviewRotation.Yaw = FMath::Fmod(CurrentPreviewRotation.Yaw + 90.0f, 360.0f);
+
+    if (PreviewActor)
+    {
+        PreviewActor->SetActorRotation(CurrentPreviewRotation);
+    }
+}
 
 void UOblivioCrafting::UpdatePreviewLocation()
 {
@@ -134,6 +146,7 @@ void UOblivioCrafting::UpdatePreviewLocation()
         float Distance = FVector::Dist(GetOwner()->GetActorLocation(), Hit.Location);
 
         PreviewActor->SetActorLocation(Hit.Location);
+        PreviewActor->SetActorRotation(CurrentPreviewRotation);
 
         if (Distance <= MaxPlacementDistance)
         {
