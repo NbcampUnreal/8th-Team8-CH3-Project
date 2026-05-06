@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -16,5 +16,6 @@ protected:
 	virtual void BeginPlay() override;
 
 	//플레이어의 피격 처리
+	UFUNCTION()
 	void HandleOwnerDamaged(float DamageAmount, float CurrentHealth, float MaxHealth);
 };

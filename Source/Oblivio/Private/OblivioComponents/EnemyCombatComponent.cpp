@@ -1,4 +1,4 @@
-#include "OblivioComponents/EnemyCombatComponent.h"
+﻿#include "OblivioComponents/EnemyCombatComponent.h"
 #include "AIEnemy/EnemyBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "OblivioComponents/CombatInterface.h"
@@ -30,8 +30,9 @@ void UEnemyCombatComponent::HandleOwnerDamaged(float DamageAmount, float Current
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Enemy damage applied and stunned"));
 		CombatOwner->ApplyHealth(DamageAmount);
-		if (CombatOwner->IsAlive()) {
+		if (!CombatOwner->IsAlive()) {
 			//사망 처리 호출
+			UE_LOG(LogTemp, Warning, TEXT("Enemy Died!"));
 		}
 		else {
 			CombatOwner->ApplyCCStun(StunDuration);
