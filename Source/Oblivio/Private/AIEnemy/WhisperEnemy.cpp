@@ -159,17 +159,9 @@ void AWhisperEnemy::AvoidFlashlightCone(AAIController* AI)
 
 void AWhisperEnemy::TryCommitWhisperAttack()
 {
-	AOblivioCharacter* const Player = Cast<AOblivioCharacter>(TargetActor);
-	if (!Player)
+	if (!IsValid(TargetActor))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Whisper: TargetActor is not AOblivioCharacter"));
 		return;
-	}
-
-	if (Player->bIsFlashlightOn)
-	{
-		Player->bIsFlashlightOn = false;
-		Player->UpdateFlashlightVisuals();
 	}
 
 	const float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
@@ -180,8 +172,9 @@ void AWhisperEnemy::TryCommitWhisperAttack()
 
 	NextAttackDecisionTime = CurrentTime + AttackCooldown;
 
-	// 공격 방식(피해, 상태이상, 연출)은 전투 담당 쪽에서 BP/C++로 구현.
-	// Whisper는 공격 타이밍 판단과 손전등 OFF까지만 책임진다.
+	// Whisper는 공격 타이밍/근접 판단만 발행한다.
+	// 실제 데미지·연출·손전등 OFF 등 결과는 OnEnemyAttackCommitted/OnAnyEnemyAttackCommitted를 받는
+	// 전투 시스템에서 처리한다(캐릭터 변수를 적이 직접 만지지 않음).
 	PerformAttack(TargetActor);
 	UE_LOG(LogTemp, Verbose, TEXT("Whisper %s committed attack decision"), *GetNameSafe(this));
 }
